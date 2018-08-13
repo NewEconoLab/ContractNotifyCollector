@@ -86,7 +86,7 @@ namespace ContactNotifyCollector.core.task
                 long localHeight = getContractHeight(localDbConnInfo, domainRecordColl, filter.ToString());
 
                 // 本地高度小于远程高度时才需处理
-                if (remoteHeight <= localHeight)
+                if (remoteHeight < localHeight)
                 {
                     // 更新过期结束的域名
                     updateExpiredAndEndedDomain(remoteHeight);
@@ -104,7 +104,7 @@ namespace ContactNotifyCollector.core.task
                     JArray queryRes = GetDataPagesWithField(remoteDbConnInfo, notifyDomainSellColl, queryField.ToString(), querySortBy.ToString(), queryFilter.ToString());
                     if (queryRes == null || queryRes.Count() == 0)
                     {
-                        updateDomainRecord(index + batchSize);
+                        updateDomainRecord(index + (batchSize < remoteHeight ? index + batchSize: remoteHeight));
                         //updateExpiredAndEndedDomain(index + batchSize);
                         log(index + batchSize, remoteHeight);
                         continue;
@@ -368,7 +368,7 @@ namespace ContactNotifyCollector.core.task
                 long startAuctionSpentTime = getAuctionSpentTime(startAuctionTime);
 
                 // 最后加价时间(计算第三天有无出价)
-                long lastBidTime = long.Parse(jo["lastBlockindex"].ToString());
+                long lastBidTime = long.Parse(jo["lastBlockindexTime"].ToString());
                 //long lastBidSpentTime = getAuctionSpentTime(lastBidTime);
                 long lastBidSpentTimeFromStartAuction = lastBidTime - startAuctionTime;
 
