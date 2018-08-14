@@ -104,7 +104,7 @@ namespace ContactNotifyCollector.core.task
                     JArray queryRes = GetDataPagesWithField(remoteDbConnInfo, notifyDomainSellColl, queryField.ToString(), querySortBy.ToString(), queryFilter.ToString());
                     if (queryRes == null || queryRes.Count() == 0)
                     {
-                        updateDomainRecord(index + (batchSize < remoteHeight ? index + batchSize: remoteHeight));
+                        updateDomainRecord((index + batchSize < remoteHeight ? index + batchSize: remoteHeight));
                         //updateExpiredAndEndedDomain(index + batchSize);
                         log(index + batchSize, remoteHeight);
                         continue;
@@ -147,6 +147,8 @@ namespace ContactNotifyCollector.core.task
                         //updateExpiredAndEndedDomain(blockindex);
                     }
                 }// end of batchSize
+
+                log(localHeight, remoteHeight);
 
                 // 未触发结束标志的域名数据状态处理
                 updateExpiredAndEndedDomain(remoteHeight);
