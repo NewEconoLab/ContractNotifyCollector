@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using ContractNotifyCollector.core;
 using ContractNotifyCollector.core.task;
+using ContractNotifyCollector.helper;
 
 /// <summary>
 /// 合约汇总进程
@@ -81,6 +82,7 @@ namespace ContractNotifyCollector
             {
                 log(ss);
             }
+            LogHelper.printHeader(info);
         }
         public static void tail()
         {

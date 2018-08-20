@@ -343,8 +343,6 @@ namespace ContractNotifyCollector.core.task
                 if (at == null)
                 {
                     // 无需处理-直接报错
-                    //at = new AuctionTx();
-                    //insertAuctionTx(at);
                     error(); return;
                 }
                 else
@@ -409,7 +407,8 @@ namespace ContractNotifyCollector.core.task
         
         private void error()
         {
-            Console.WriteLine("find err");
+            Console.WriteLine("not find data");
+            throw new Exception("not find data");
         }
         
         private AuctionTx queryAuctionTx(string auctionId)
