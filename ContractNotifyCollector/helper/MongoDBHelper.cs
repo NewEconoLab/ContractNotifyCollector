@@ -4,7 +4,7 @@ using MongoDB.Driver;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 
-namespace ContactNotifyCollector.lib
+namespace ContractNotifyCollector.helper
 {
     /// <summary>
     /// mongdb 操作帮助类
@@ -18,7 +18,7 @@ namespace ContactNotifyCollector.lib
             var database = client.GetDatabase(mongodbDatabase);
             var collection = database.GetCollection<BsonDocument>(coll);
 
-            var txCount = collection.Find(BsonDocument.Parse(findson)).Count();
+            var txCount = collection.Find(BsonDocument.Parse(findson)).CountDocuments();
 
             client = null;
 
@@ -54,6 +54,26 @@ namespace ContactNotifyCollector.lib
             else { return new JArray(); }
         }
 
+        public List<T> GetData<T>(string mongodbConnStr, string mongodbDatabase, string coll, string findFliter = "{}", string sortFliter = "{}", int skip = 0, int limit = 0)
+        {
+            var client = new MongoClient(mongodbConnStr);
+            var database = client.GetDatabase(mongodbDatabase);
+            var collection = database.GetCollection<T>(coll);
+
+            List<T> query = null;
+            if (limit == 0)
+            {
+                query = collection.Find(BsonDocument.Parse(findFliter)).ToList();
+            }
+            else
+            {
+                query = collection.Find(BsonDocument.Parse(findFliter)).Sort(sortFliter).Skip(skip).Limit(limit).ToList();
+            }
+            client = null;
+
+            return query;
+        }
+
 
         public void PutData(string mongodbConnStr, string mongodbDatabase, string coll, string data, bool isAync = false)
         {
@@ -67,6 +87,22 @@ namespace ContactNotifyCollector.lib
             else
             {
                 collection.InsertOne(BsonDocument.Parse(data));
+            }
+
+            collection = null;
+        }
+        public void PutData<T>(string mongodbConnStr, string mongodbDatabase, string coll, T data, bool isAync = false)
+        {
+            var client = new MongoClient(mongodbConnStr);
+            var database = client.GetDatabase(mongodbDatabase);
+            var collection = database.GetCollection<T>(coll);
+            if (isAync)
+            {
+                collection.InsertOneAsync(data);
+            }
+            else
+            {
+                collection.InsertOne(data);
             }
 
             collection = null;
@@ -99,21 +135,29 @@ namespace ContactNotifyCollector.lib
             client = null;
         }
 
-        public void ReplaceData(string mongodbConnStr, string mongodbDatabase, string coll, string Jdata, string Jcondition)
+        public void ReplaceData<T>(string mongodbConnStr, string mongodbDatabase, string coll, T Jdata, string Jcondition)
         {
-            ReplaceData(mongodbConnStr, mongodbDatabase, coll, JObject.Parse(Jdata), JObject.Parse(Jcondition));
+            var client = new MongoClient(mongodbConnStr);
+            var database = client.GetDatabase(mongodbDatabase);
+            var collection = database.GetCollection<T>(coll);
+
+            collection.ReplaceOne(BsonDocument.Parse(Jcondition), Jdata);
+
+            client = null;
         }
-        public void ReplaceData(string mongodbConnStr, string mongodbDatabase, string coll, JObject Jdata, JObject Jcondition)
+        public void ReplaceData(string mongodbConnStr, string mongodbDatabase, string coll, string Jdata, string Jcondition)
         {
             var client = new MongoClient(mongodbConnStr);
             var database = client.GetDatabase(mongodbDatabase);
             var collection = database.GetCollection<BsonDocument>(coll);
-
-            BsonDocument data = BsonDocument.Parse(Newtonsoft.Json.JsonConvert.SerializeObject(Jdata));
-            BsonDocument condition = BsonDocument.Parse(Newtonsoft.Json.JsonConvert.SerializeObject(Jcondition));
-            collection.ReplaceOne(condition, data);
+            
+            collection.ReplaceOne(BsonDocument.Parse(Jcondition), BsonDocument.Parse(Jdata));
 
             client = null;
+        }
+        public void ReplaceData(string mongodbConnStr, string mongodbDatabase, string coll, JObject Jdata, JObject Jcondition)
+        {
+            ReplaceData(mongodbConnStr, mongodbDatabase, coll, Jdata.ToString(), Jcondition.ToString());
         }
 
         public JArray GetDataWithField(string mongodbConnStr, string mongodbDatabase, string coll, string fieldBson, string findBson = "{}")

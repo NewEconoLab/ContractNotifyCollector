@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading;
 
-namespace ContactNotifyCollector
+namespace ContractNotifyCollector.helper
 {
     /// <summary>
     /// 日志输出帮助类

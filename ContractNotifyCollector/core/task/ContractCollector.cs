@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using ContactNotifyCollector.lib;
+using ContractNotifyCollector.helper;
 using Newtonsoft.Json.Linq;
 
-namespace ContactNotifyCollector.core.task
+namespace ContractNotifyCollector.core.task
 {
     /// <summary>
     /// 汇总合约任务

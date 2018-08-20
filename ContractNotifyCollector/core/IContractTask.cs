@@ -1,5 +1,5 @@
 ﻿
-namespace ContactNotifyCollector.core
+namespace ContractNotifyCollector.core
 {
     /// <summary>
     /// 合约任务接口

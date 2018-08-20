@@ -1,14 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using ContactNotifyCollector.core;
-using ContactNotifyCollector.core.task;
+using ContractNotifyCollector.core;
+using ContractNotifyCollector.core.task;
 
 /// <summary>
 /// 合约汇总进程
 /// 
 /// </summary>
-namespace ContactNotifyCollector
+namespace ContractNotifyCollector
 {
     class Program
     {
@@ -22,6 +22,7 @@ namespace ContactNotifyCollector
             AddTask(new ContractCollector("ContractCollector"));
             AddTask(new DomainSellAnalyzer("DomainSellAnalyzer"));
             AddTask(new DomainCenterAnalyzer("DomainCenterAnalyzer"));
+            AddTask(new NewDomainSellAnalyzer("NewDomainSellAnalyzer"));
         }
 
         /// <summary>

@@ -2,7 +2,7 @@
 using System.IO;
 using System.Linq;
 
-namespace ContactNotifyCollector
+namespace ContractNotifyCollector
 {
     /// <summary>
     /// 配置主类

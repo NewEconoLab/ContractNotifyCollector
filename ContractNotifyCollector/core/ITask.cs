@@ -1,6 +1,6 @@
 ﻿using Newtonsoft.Json.Linq;
 
-namespace ContactNotifyCollector.core
+namespace ContractNotifyCollector.core
 {
     /// <summary>
     /// 任务接口

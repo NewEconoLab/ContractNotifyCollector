@@ -1,7 +1,8 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using ContractNotifyCollector.helper;
+using Newtonsoft.Json.Linq;
 using System;
 
-namespace ContactNotifyCollector.core
+namespace ContractNotifyCollector.core
 {
     /// <summary>
     /// 合约任务

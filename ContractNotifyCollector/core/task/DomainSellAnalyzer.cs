@@ -1,11 +1,11 @@
-﻿using ContactNotifyCollector.lib;
+﻿using ContractNotifyCollector.helper;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
-namespace ContactNotifyCollector.core.task
+namespace ContractNotifyCollector.core.task
 {
     /// <summary>
     /// 域名拍卖解析器

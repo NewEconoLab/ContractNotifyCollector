@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace ContactNotifyCollector.lib
+namespace ContractNotifyCollector.helper
 {
     /// <summary>
     /// 时间帮助类

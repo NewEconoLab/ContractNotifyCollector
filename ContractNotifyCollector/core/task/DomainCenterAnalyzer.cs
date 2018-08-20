@@ -1,9 +1,9 @@
-﻿using ContactNotifyCollector.lib;
+﻿using ContractNotifyCollector.helper;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Linq;
 
-namespace ContactNotifyCollector.core.task
+namespace ContractNotifyCollector.core.task
 {
     /// <summary>
     /// 域名中心解析器

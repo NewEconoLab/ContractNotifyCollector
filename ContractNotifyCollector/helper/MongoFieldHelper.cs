@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json.Linq;
 using System.Linq;
 
-namespace ContactNotifyCollector.lib
+namespace ContractNotifyCollector.helper
 {
     /// <summary>
     /// mongodb字段拼接帮助类
