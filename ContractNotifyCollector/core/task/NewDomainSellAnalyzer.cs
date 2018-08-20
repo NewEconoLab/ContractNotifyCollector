@@ -52,6 +52,7 @@ namespace ContractNotifyCollector.core.task
             auctionStateColl = cfg["auctionStateColl"].ToString();
             notifyRecordColl = cfg["notifyRecordColl"].ToString();
             notifyDomainSellColl = cfg["notifyDomainSellColl"].ToString();
+            notifyDomainCenterColl = cfg["notifyDomainCenterColl"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
         }
@@ -61,6 +62,10 @@ namespace ContractNotifyCollector.core.task
             while(true)
             {
                 ping();
+
+                // 
+                updateState();
+
                 // 获取远程已同步高度
                 JObject filter = new JObject() { { "contractHash", notifyDomainSellColl } };
                 long remoteHeight = getContractHeight(remoteDbConnInfo, notifyRecordColl, filter.ToString());
@@ -110,13 +115,15 @@ namespace ContractNotifyCollector.core.task
                         blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["endBlock"].ToString())).ToArray()).ToArray();
                     }
                     //blockindexArrs = blockindexArrs.Concat(queryRes.Select(item => long.Parse(item["endBlock"].ToString())).ToArray()).ToArray();
+                    tmp = queryRes.Where(item => item["lastBlock"] != null && item["lastBlock"].ToString() != "").ToArray();
+                    if (tmp != null && tmp.Count() > 0)
+                    {
+                        blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["lastBlock"].ToString())).ToArray()).ToArray();
+                    }
                     blockindexArrs = blockindexArrs.Distinct().ToArray();
                     Dictionary<string, long> blockindexDict = getBlockTimeByIndex(blockindexArrs.ToArray());
                     Dictionary<string, string> blockindexDictFmt = blockindexDict.ToDictionary(key => key.Key, val => TimeHelper.toBlockindexTimeFmt(val.Value));
-
-                    // 哈希域名列表(父域名-父哈希)
-                    //string[] phArr = queryRes.Select(item => item["parenthash"].ToString()).Distinct().Where(pItem => pItem != "").ToArray();
-                    Dictionary<string, string> phDict = null;// getDomainByHash(phArr);
+                    
                     //
                     int cnt = blockindexArr.Count();
                     for (int i = 0; i < cnt; ++i)
@@ -127,27 +134,27 @@ namespace ContractNotifyCollector.core.task
                         rr = res.Where(p2 => p2["displayName"].ToString() == "startAuction").ToArray();
                         if(rr != null && rr.Count() != 0)
                         {
-                            updateR1(rr, blockindex, phDict, blockindexDict);
+                            updateR1(rr, blockindex, blockindexDict);
                         }
                         rr = res.Where(p2 => p2["displayName"].ToString() == "changeAuctionState").ToArray();
                         if (rr != null && rr.Count() != 0)
                         {
-                            updateR2(rr, blockindex, phDict, blockindexDict);
+                            updateR2(rr, blockindex, blockindexDict);
                         }
                         rr = res.Where(p2 => p2["displayName"].ToString() == "assetManagement").ToArray();
                         if (rr != null && rr.Count() != 0)
                         {
-                            updateR3(rr, blockindex, phDict, blockindexDict);
+                            updateR3(rr, blockindex, blockindexDict);
                         }
                         rr = res.Where(p2 => p2["displayName"].ToString() == "raiseEndsAuction").ToArray();
                         if (rr != null && rr.Count() != 0)
                         {
-                            updateR4(rr, blockindex, phDict, blockindexDict);
+                            updateR4(rr, blockindex, blockindexDict);
                         }
                         rr = res.Where(p2 => p2["displayName"].ToString() == "collectDomain").ToArray();
                         if (rr != null && rr.Count() != 0)
                         {
-                            updateR5(rr, blockindex, phDict, blockindexDict);
+                            updateR5(rr, blockindex, blockindexDict);
                         }
                         updateDomainRecord(blockindex);
                         log(blockindex, remoteHeight);
@@ -157,9 +164,94 @@ namespace ContractNotifyCollector.core.task
                 }
             }
         }
+        
+        private const long ONE_DAY_SECONDS = 1 * /*24 * 60 * */60 /*测试时5分钟一天*/* 5;
+        private const long TWO_DAY_SECONDS = ONE_DAY_SECONDS * 2;
+        private const long THREE_DAY_SECONDS = ONE_DAY_SECONDS * 3;
+        private const long FIVE_DAY_SECONDS = ONE_DAY_SECONDS * 5;
+        private const long ONE_YEAR_SECONDS = ONE_DAY_SECONDS * 365;
 
-        private void updateR1(JToken[] rr, long blockindex, Dictionary<string, string> phDict, Dictionary<string, long> blockindexDict)
+        private void updateState()
+        {
+            string filter = MongoFieldHelper.toFilter(new string[] { AuctionState.STATE_START, AuctionState.STATE_CONFIRM, AuctionState.STATE_RANDOM}, "auctionState").ToString();
+            List<AuctionTx> list = mh.GetData<AuctionTx>(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, filter);
+            if(list == null || list.Count == 0)
+            {
+                return;
+            }
+            foreach (AuctionTx jo in list)
+            {
+                long nowtime = TimeHelper.GetTimeStamp();
+                long starttime = jo.startTime.blocktime;
+                string oldState = jo.auctionState;
+
+                /**
+                 * 状态判断逻辑：
+                 * 0. 开标为开标期
+                 * 1. 小于等于三天，确定期
+                 * 2. 大于三天，则：
+                 *          a. 超过1Y，则过期
+                 *          b. 超过5D，则结束
+                 *          c. (3,5)结束时间有值，且大于开拍时间，则结束
+                 *          d. (3,5)结束时间无值且前三天无人出价，则流拍
+                 *          e. (3,5)结束时间无值且最后出价在开拍后两天内，则超时3D结束
+                 *          f. (3,5)其余为随机
+                 */
+
+                string newState = null;
+                if(nowtime - starttime <= THREE_DAY_SECONDS)
+                {
+                    // 小于三天
+                    newState = AuctionState.STATE_CONFIRM;
+                } else
+                {
+                    // 大于三天
+                    if (nowtime > starttime + ONE_YEAR_SECONDS)
+                    {
+                        // 超过1Y，则过期
+                        newState = AuctionState.STATE_EXPIRED;
+                    }
+                    else if (nowtime >= starttime + FIVE_DAY_SECONDS)
+                    {
+                        // 超过5D，则结束
+                        newState = AuctionState.STATE_END;
+                    }
+                    else if (jo.endTime != null && jo.endTime.blocktime > starttime)
+                    {
+                        // (3,5)结束时间有值，且大于开拍时间，则结束
+                        newState = AuctionState.STATE_END;
+                    }
+                    else if (jo.lastTime == null)
+                    {
+                        // (3,5)结束时间无值且前三天无人出价，则流拍
+                        newState = AuctionState.STATE_ABORT;
+                    }
+                    else if (jo.lastTime.blocktime <= starttime + TWO_DAY_SECONDS)
+                    {
+                        // (3,5)结束时间无值且最后出价在开拍后两天内，则超时3D结束
+                        newState = AuctionState.STATE_END;
+                    }
+                    else
+                    {
+                        // 其余为随机期
+                        newState = AuctionState.STATE_RANDOM;
+                    }
+                }
+
+                if(oldState != newState)
+                {
+                    updateAuctionState(newState, oldState, jo.auctionId);
+                }
+                
+            }
+
+        }
+        private void updateR1(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
         {// startAuction
+
+            // 哈希域名列表(父域名-父哈希)
+            string[] phArr = rr.Select(item => item["parenthash"].ToString()).Distinct().Where(pItem => pItem != "").ToArray();
+            Dictionary<string, string> phDict = getDomainByHash(phArr);
             foreach (JToken jt in rr)
             {
                 string auctionId = jt["auctionId"].ToString();
@@ -175,13 +267,16 @@ namespace ContractNotifyCollector.core.task
                         auctionId = auctionId,
                         domain = domain,
                         parenthash = parenthash,
+                        fulldomain = domain + "." + phDict.GetValueOrDefault(parenthash),
                         startAddress = who,
                         startTime = new AuctionTime
                         {
                             blockindex = blockindex,
                             blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                             txid = txid
-                        }
+                        },
+                        auctionState = AuctionState.STATE_START
+
                     };
                     insertAuctionTx(at);
                 }
@@ -190,6 +285,7 @@ namespace ContractNotifyCollector.core.task
                     // 本无需处理，但为了后面数据重跑，新增如下更新
                     at.domain = domain;
                     at.parenthash = parenthash;
+                    at.fulldomain = domain + "." + phDict.GetValueOrDefault(parenthash);
                     at.startAddress = who;
                     at.startTime = new AuctionTime
                     {
@@ -197,12 +293,14 @@ namespace ContractNotifyCollector.core.task
                         blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                         txid = txid
                     };
+
+                    at.auctionState = AuctionState.STATE_START;
                     replaceAuctionTx(at, auctionId);
                 }
 
             }
         }
-        private void updateR2(JToken[] rr, long blockindex, Dictionary<string, string> phDict, Dictionary<string, long> blockindexDict)
+        private void updateR2(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
         {// changeAuctionState
             foreach (JToken jt in rr) 
             {
@@ -220,51 +318,32 @@ namespace ContractNotifyCollector.core.task
                 AuctionTx at = queryAuctionTx(auctionId);
                 if(at == null)
                 {
-                    at = new AuctionTx {
-                        auctionId = auctionId,
-                        domain = domain,
-                        parenthash = parenthash,
-                        domainTTL = domainTTL,
-                        startTime = new AuctionTime {
-                            blockindex = startBlockSelling,
-                            blocktime = blockindexDict.GetValueOrDefault(blockindex+""),
-                            txid = txid
-                        },
-                        endTime = new AuctionTime
-                        {
-                            blockindex = endBlock,
-                            blocktime = endBlock == 0 ? 0:blockindexDict.GetValueOrDefault(blockindex + ""),
-                            txid = endBlock == 0 ? "":txid
-                        },
-                        maxPrice = maxPrice,
-                        maxBuyer = maxBuyer,
-                    };
-                    insertAuctionTx(at);
-                } else
-                {
-                    at.domain = domain;
-                    at.parenthash = parenthash;
-                    at.domainTTL = domainTTL;
-                    at.startTime = new AuctionTime
-                    {
-                        blockindex = startBlockSelling,
-                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
-                        txid = txid
-                    };
-                    at.endTime = new AuctionTime
-                    {
-                        blockindex = endBlock,
-                        blocktime = endBlock == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
-                        txid = endBlock == 0 ? "" : txid
-                    };
-                    at.maxPrice = maxPrice;
-                    at.maxBuyer = maxBuyer;
-                    replaceAuctionTx(at, auctionId);
+                    // 没有竞拍信息，报错停止处理
+                    error(); return;
                 }
+                at.domain = domain;
+                at.parenthash = parenthash;
+                at.domainTTL = domainTTL;
+                at.startTime = new AuctionTime
+                {
+                    blockindex = startBlockSelling,
+                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = txid
+                };
+                at.endTime = new AuctionTime
+                {
+                    blockindex = endBlock,
+                    blocktime = endBlock == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = endBlock == 0 ? "" : txid
+                };
+                at.maxPrice = maxPrice;
+                at.maxBuyer = maxBuyer;
+                replaceAuctionTx(at, auctionId);
+               
             }
         }
 
-        private void updateR3(JToken[] rr, long blockindex, Dictionary<string, string> phDict, Dictionary<string, long> blockindexDict)
+        private void updateR3(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
         {// assetManagement
             foreach (JToken jt in rr) 
             {
@@ -299,40 +378,38 @@ namespace ContractNotifyCollector.core.task
                 AuctionTx at = queryAuctionTx(auctionId);
                 if (at == null)
                 {
-                    // 报错处理
+                    // 没有竞拍信息，报错停止处理
                     error(); return;
                 }
-                else
+                if(at.addwholist == null)
                 {
-                    if(at.addwholist == null)
-                    {
-                        at.addwholist = new List<AuctionAddWho>();
-                    }
-                    AuctionAddWho addwho = null;
-                    AuctionAddWho[] addwhoArr = at.addwholist.Where(p => p.address == address).ToArray();
-                    if(addwhoArr != null && addwhoArr.Count() > 0)
-                    {
-                        addwho = addwhoArr[0];
-                        at.addwholist.Remove(addwho);
-                        addwho.totalValue = auctionidIsTo ? addwho.totalValue + value : addwho.totalValue - value;
-                    } else
-                    {
-                        addwho = new AuctionAddWho();
-                        addwho.address = address;
-                        addwho.totalValue = value;
-                    }
-                    addwho.lastTime = new AuctionTime
-                    {
-                        blockindex = blockindex,
-                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
-                        txid = txid
-                    };
-                    at.addwholist.Add(addwho);
-                    replaceAuctionTx(at, auctionId);
+                    at.addwholist = new List<AuctionAddWho>();
                 }
+                AuctionAddWho addwho = null;
+                AuctionAddWho[] addwhoArr = at.addwholist.Where(p => p.address == address).ToArray();
+                if(addwhoArr != null && addwhoArr.Count() > 0)
+                {
+                    addwho = addwhoArr[0];
+                    at.addwholist.Remove(addwho);
+                    addwho.totalValue = auctionidIsTo ? addwho.totalValue + value : addwho.totalValue - value;
+                } else
+                {
+                    addwho = new AuctionAddWho();
+                    addwho.address = address;
+                    addwho.totalValue = value;
+                }
+                addwho.lastTime = new AuctionTime
+                {
+                    blockindex = blockindex,
+                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = txid
+                };
+                at.addwholist.Add(addwho);
+                replaceAuctionTx(at, auctionId);
+                
             }
         }
-        private void updateR4(JToken[] rr, long blockindex, Dictionary<string, string> phDict, Dictionary<string, long> blockindexDict)
+        private void updateR4(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
         {//raiseEndsAuction
             foreach (JToken jt in rr)
             {
@@ -342,24 +419,21 @@ namespace ContractNotifyCollector.core.task
                 AuctionTx at = queryAuctionTx(auctionId);
                 if (at == null)
                 {
-                    // 无需处理-直接报错
+                    // 没有竞拍信息，报错停止处理
                     error(); return;
                 }
-                else
+                at.endAddress = who;
+                at.endTime = new AuctionTime
                 {
-                    at.endAddress = who;
-                    at.endTime = new AuctionTime
-                    {
-                        blockindex = blockindex,
-                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
-                        txid = txid
-                    };
-                    replaceAuctionTx(at, auctionId);
-                }
+                    blockindex = blockindex,
+                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = txid
+                };
+                replaceAuctionTx(at, auctionId);
 
             }
         }
-        private void updateR5(JToken[] rr, long blockindex, Dictionary<string, string> phDict, Dictionary<string, long> blockindexDict)
+        private void updateR5(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
         {// collectDomain
             foreach (JToken jt in rr)
             {
@@ -371,37 +445,33 @@ namespace ContractNotifyCollector.core.task
                 AuctionTx at = queryAuctionTx(auctionId);
                 if(at == null)
                 {
-                    // 报错处理
+                    // 没有竞拍信息，报错停止处理
                     error(); return;
-                } else
+                } 
+                if(at.addwholist == null || at.addwholist.Count == 0)
                 {
-                    if(at.addwholist == null || at.addwholist.Count == 0)
-                    {
-                        at.addwholist = new List<AuctionAddWho>();
-                    }
-                    AuctionAddWho addwho = null;
-                    AuctionAddWho[] addwhoArr = at.addwholist.Where(p => p.address == who).ToArray();
-                    if (addwhoArr != null && addwhoArr.Count() > 0)
-                    {
-                        addwho = addwhoArr[0];
-                        at.addwholist.Remove(addwho);
-                    }
-                    else
-                    {
-                        addwho = new AuctionAddWho();
-                        addwho.address = who;
-                    }
-                    addwho.getdomainTime = new AuctionTime
-                    {
-                        blockindex = blockindex,
-                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
-                        txid = txid
-                    };
-                    at.addwholist.Add(addwho);
-                    replaceAuctionTx(at, auctionId);
-                    
+                    at.addwholist = new List<AuctionAddWho>();
                 }
-
+                AuctionAddWho addwho = null;
+                AuctionAddWho[] addwhoArr = at.addwholist.Where(p => p.address == who).ToArray();
+                if (addwhoArr != null && addwhoArr.Count() > 0)
+                {
+                    addwho = addwhoArr[0];
+                    at.addwholist.Remove(addwho);
+                }
+                else
+                {
+                    addwho = new AuctionAddWho();
+                    addwho.address = who;
+                }
+                addwho.getdomainTime = new AuctionTime
+                {
+                    blockindex = blockindex,
+                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = txid
+                };
+                at.addwholist.Add(addwho);
+                replaceAuctionTx(at, auctionId);
             }
         }
         
@@ -427,24 +497,32 @@ namespace ContractNotifyCollector.core.task
         }
         private void replaceAuctionTx(AuctionTx at, string auctionId)
         {
-            string filter = new JObject() { { "auctionId", auctionId } }.ToString();
-            mh.ReplaceData(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, at, filter);
+            string findstr = new JObject() { { "auctionId", auctionId } }.ToString();
+            mh.ReplaceData(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, at, findstr);
         }
-
+        private void updateAuctionState(string newState, string oldState, string auctionId)
+        {
+            string findstr = new JObject() { { "auctionState", oldState },{ "auctionId", auctionId } }.ToString();
+            string newdata = new JObject() { { "$set", new JObject() { { "auctionState", newState } } } }.ToString();
+            mh.UpdateData(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, newdata, findstr);
+        }
+        
         class AuctionTx
         {
             public ObjectId _id { get; set; }
             public string auctionId { get; set; }
             public string domain { get; set; }
             public string parenthash { get; set; }
+            public string fulldomain { get; set; }
             public string domainTTL { get; set; }
-            public string auctionstate { get; set; }
+            public string auctionState { get; set; }
             public AuctionTime startTime { get; set; }
             public string startAddress { get; set; }
             public string maxPrice { get; set; }
             public string maxBuyer { get; set; }
             public AuctionTime endTime { get; set; }
             public string endAddress { get; set; }
+            public AuctionTime lastTime { get; set; }
             public List<AuctionAddWho> addwholist {get; set;}
 
         }
@@ -473,11 +551,11 @@ namespace ContractNotifyCollector.core.task
         class AuctionState
         {
             public const string STATE_START = "0101";
-            public const string STATE_CONFIRM = "0101";
-            public const string STATE_RANDOM = "0101";
-            public const string STATE_END = "0101"; // 触发结束、3D/5D到期结束
-            public const string STATE_ABORT = "0101";
-            public const string STATE_EXPIRED = "0101";
+            public const string STATE_CONFIRM = "0201";
+            public const string STATE_RANDOM = "0301";
+            public const string STATE_END = "0401"; // 触发结束、3D/5D到期结束
+            public const string STATE_ABORT = "0501";
+            public const string STATE_EXPIRED = "0601";
         }
 
         private Dictionary<string, string> getDomainByHash(string[] parentHashArr)
