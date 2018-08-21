@@ -63,7 +63,7 @@ namespace ContractNotifyCollector.core.task
             {
                 ping();
 
-                // 
+                // 更新状态
                 updateState();
 
                 // 获取远程已同步高度
@@ -74,29 +74,25 @@ namespace ContractNotifyCollector.core.task
                 filter = new JObject() { { "contractColl", notifyDomainSellColl } };
                 long localHeight = getContractHeight(localDbConnInfo, auctionRecordColl, filter.ToString());
                 
-                // 本地高度小于远程高度时才需处理
-                if (remoteHeight < localHeight)
+                // 
+                for (long index = localHeight; index <= remoteHeight+1; index += batchSize)
                 {
-                    log(localHeight, remoteHeight);
-                    continue;
-                }
-                for (long index = localHeight; index < remoteHeight + 1; index += batchSize)
-                {
+                    long nextIndex = index + batchSize;
+                    long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight+1;
                     // 待处理数据
-                    JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$lte", index + batchSize }, { "$gte", index } } } };
+                    JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gte", index },{ "$lte", endIndex } } } };
                     JObject querySortBy = new JObject() { { "blockindex", 1 } };
                     JObject queryField = new JObject() { { "state", 0 } };
                     JArray queryRes = GetDataPagesWithField(remoteDbConnInfo, notifyDomainSellColl, queryField.ToString(), querySortBy.ToString(), queryFilter.ToString());
                     if (queryRes == null || queryRes.Count() == 0)
                     {
-                        if (remoteHeight == localHeight)
+                        if (remoteHeight <= localHeight)
                         {
                             log(localHeight, remoteHeight);
                             break;
                         }
-                        long handledHeight = index + batchSize;
-                        updateDomainRecord((handledHeight < remoteHeight ? handledHeight : remoteHeight));
-                        log(handledHeight, remoteHeight);
+                        updateDomainRecord(endIndex);
+                        log(endIndex, remoteHeight);
                         continue;
                     }
                     // 高度时间列表
@@ -156,7 +152,10 @@ namespace ContractNotifyCollector.core.task
                         {
                             updateR5(rr, blockindex, blockindexDict);
                         }
-                        updateDomainRecord(blockindex);
+                        if(blockindex != localHeight)
+                        {
+                            updateDomainRecord(blockindex);
+                        }
                         log(blockindex, remoteHeight);
                     }
 
@@ -275,6 +274,12 @@ namespace ContractNotifyCollector.core.task
                             blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                             txid = txid
                         },
+                        endTime = new AuctionTime
+                        {
+                            blockindex = 0,
+                            blocktime = 0,
+                            txid = ""
+                        },
                         auctionState = AuctionState.STATE_START
 
                     };
@@ -293,7 +298,12 @@ namespace ContractNotifyCollector.core.task
                         blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                         txid = txid
                     };
-
+                    at.endTime = new AuctionTime
+                    {
+                        blockindex = 0,
+                        blocktime = 0,
+                        txid = ""
+                    };
                     at.auctionState = AuctionState.STATE_START;
                     replaceAuctionTx(at, auctionId);
                 }
@@ -321,15 +331,21 @@ namespace ContractNotifyCollector.core.task
                     // 没有竞拍信息，报错停止处理
                     error(); return;
                 }
+                // 相同高度特殊处理
+                if(at.domain == domain 
+                    && at.parenthash == parenthash
+                    && at.domainTTL == domainTTL
+                    && at.endTime.blockindex == endBlock
+                    && at.endTime.txid == (endBlock == 0 ? "":txid)
+                    && at.maxPrice == maxPrice
+                    && at.maxBuyer == maxBuyer)
+                {
+                    continue;
+                }
+
                 at.domain = domain;
                 at.parenthash = parenthash;
                 at.domainTTL = domainTTL;
-                at.startTime = new AuctionTime
-                {
-                    blockindex = startBlockSelling,
-                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
-                    txid = txid
-                };
                 at.endTime = new AuctionTime
                 {
                     blockindex = endBlock,
@@ -398,12 +414,20 @@ namespace ContractNotifyCollector.core.task
                     addwho.address = address;
                     addwho.totalValue = value;
                 }
+                // 相同高度特殊处理
+                if (addwho.lastTime != null 
+                    && addwho.lastTime.blockindex == blockindex
+                    && addwho.lastTime.txid == txid)
+                {
+                    continue;
+                }
                 addwho.lastTime = new AuctionTime
                 {
                     blockindex = blockindex,
                     blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                     txid = txid
                 };
+                
                 at.addwholist.Add(addwho);
                 replaceAuctionTx(at, auctionId);
                 
@@ -421,6 +445,14 @@ namespace ContractNotifyCollector.core.task
                 {
                     // 没有竞拍信息，报错停止处理
                     error(); return;
+                }
+                // 相同高度特殊处理
+                if(at.endAddress == who
+                    && at.endTime != null
+                    && at.endTime.blockindex == blockindex
+                    && at.endTime.txid == txid)
+                {
+                    continue;
                 }
                 at.endAddress = who;
                 at.endTime = new AuctionTime
@@ -463,6 +495,13 @@ namespace ContractNotifyCollector.core.task
                 {
                     addwho = new AuctionAddWho();
                     addwho.address = who;
+                }
+                // 相同高度特殊处理
+                if(addwho.getdomainTime != null 
+                    && addwho.getdomainTime.blockindex == blockindex
+                    && addwho.getdomainTime.txid == txid)
+                {
+                    continue;
                 }
                 addwho.getdomainTime = new AuctionTime
                 {
