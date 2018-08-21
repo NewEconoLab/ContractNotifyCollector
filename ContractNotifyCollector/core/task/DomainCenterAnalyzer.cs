@@ -101,7 +101,7 @@ namespace ContractNotifyCollector.core.task
 
                     } else
                     {
-                        minDomainCenterBlockindex = startIndex + batchSize;
+                        minDomainCenterBlockindex = (startIndex + batchSize < maxDomainCenterBlockindex ? startIndex + batchSize:maxDomainCenterBlockindex);
                     }
                     updateRecord(minDomainCenterBlockindex, domainCenterCol);
                     log("domainCenter", startIndex, maxDomainCenterBlockindex);
@@ -127,8 +127,8 @@ namespace ContractNotifyCollector.core.task
                 for (long startIndex= domainResoverBlockindex; startIndex< maxDomainResoverBlockindex; startIndex+= batchSize)
                 {
                     JArray andFilter = new JArray();
-                    andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$gte", domainResoverBlockindex } } } });
-                    andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$lt", domainResoverBlockindex + batchSize } } } });
+                    andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$gte", startIndex } } } });
+                    andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$lt", startIndex + batchSize } } } });
                     JObject domainCenterFilter = new JObject() { { "$and", andFilter } };
                     domainCenterFilter.Add("protocol", "addr");
                     JArray domainCenterRes = mh.GetData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainResolverCol, domainCenterFilter.ToString());
@@ -139,7 +139,7 @@ namespace ContractNotifyCollector.core.task
                         
                     } else
                     {
-                        minDomainResoverBlockindex = startIndex + batchSize;
+                        minDomainResoverBlockindex = (startIndex + batchSize < maxDomainResoverBlockindex ? startIndex + batchSize:maxDomainResoverBlockindex);
                     }
                     updateRecord(minDomainResoverBlockindex, domainResolverCol);
                     log("domainResolver", startIndex, maxDomainResoverBlockindex);
