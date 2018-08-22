@@ -354,6 +354,12 @@ namespace ContractNotifyCollector.core.task
                 };
                 at.maxPrice = maxPrice;
                 at.maxBuyer = maxBuyer;
+                at.lastTime = new AuctionTime
+                {
+                    blockindex = lastBlock,
+                    blocktime = lastBlock == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = lastBlock == 0 ? "":txid
+                };
                 replaceAuctionTx(at, auctionId);
                
             }
