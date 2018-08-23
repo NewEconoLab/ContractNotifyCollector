@@ -427,12 +427,15 @@ namespace ContractNotifyCollector.core.task
                 {
                     continue;
                 }
-                addwho.lastTime = new AuctionTime
+                if(auctionidIsTo)
                 {
-                    blockindex = blockindex,
-                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
-                    txid = txid
-                };
+                    addwho.lastTime = new AuctionTime
+                    {
+                        blockindex = blockindex,
+                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                        txid = txid
+                    };
+                }
                 
                 at.addwholist.Add(addwho);
                 replaceAuctionTx(at, auctionId);
