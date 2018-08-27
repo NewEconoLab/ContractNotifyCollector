@@ -23,6 +23,7 @@ namespace ContractNotifyCollector
             AddTask(new ContractCollector("ContractCollector"));
             AddTask(new DomainSellAnalyzer("DomainSellAnalyzer"));
             AddTask(new DomainCenterAnalyzer("DomainCenterAnalyzer"));
+            AddTask(new DomainCenterAnalyzer("NewDomainCenterAnalyzer"));
             AddTask(new NewDomainSellAnalyzer("NewDomainSellAnalyzer"));
         }
 

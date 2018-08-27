@@ -205,7 +205,12 @@ namespace ContractNotifyCollector.core.task
                 } else
                 {
                     // 大于三天
-                    if (nowtime > starttime + ONE_YEAR_SECONDS)
+                    if (jo.lastTime == null || jo.lastTime.blockindex == 0)
+                    {
+                        // (3,5)结束时间无值且前三天无人出价，则流拍
+                        newState = AuctionState.STATE_ABORT;
+                    }
+                    else if (nowtime > starttime + ONE_YEAR_SECONDS)
                     {
                         // 超过1Y，则过期
                         newState = AuctionState.STATE_EXPIRED;
@@ -219,11 +224,6 @@ namespace ContractNotifyCollector.core.task
                     {
                         // (3,5)结束时间有值，且大于开拍时间，则结束
                         newState = AuctionState.STATE_END;
-                    }
-                    else if (jo.lastTime == null)
-                    {
-                        // (3,5)结束时间无值且前三天无人出价，则流拍
-                        newState = AuctionState.STATE_ABORT;
                     }
                     else if (jo.lastTime.blocktime <= starttime + TWO_DAY_SECONDS)
                     {
@@ -280,7 +280,7 @@ namespace ContractNotifyCollector.core.task
                             blocktime = 0,
                             txid = ""
                         },
-                        auctionState = AuctionState.STATE_START
+                        auctionState = AuctionState.STATE_CONFIRM
 
                     };
                     insertAuctionTx(at);
@@ -304,7 +304,7 @@ namespace ContractNotifyCollector.core.task
                         blocktime = 0,
                         txid = ""
                     };
-                    at.auctionState = AuctionState.STATE_START;
+                    at.auctionState = AuctionState.STATE_CONFIRM;
                     replaceAuctionTx(at, auctionId);
                 }
 
@@ -329,7 +329,7 @@ namespace ContractNotifyCollector.core.task
                 if(at == null)
                 {
                     // 没有竞拍信息，报错停止处理
-                    error(); return;
+                    error(auctionId); return;
                 }
                 // 相同高度特殊处理
                 if(at.domain == domain 
@@ -401,7 +401,7 @@ namespace ContractNotifyCollector.core.task
                 if (at == null)
                 {
                     // 没有竞拍信息，报错停止处理
-                    error(); return;
+                    error(auctionId); return;
                 }
                 if(at.addwholist == null)
                 {
@@ -453,7 +453,7 @@ namespace ContractNotifyCollector.core.task
                 if (at == null)
                 {
                     // 没有竞拍信息，报错停止处理
-                    error(); return;
+                    error(auctionId); return;
                 }
                 // 相同高度特殊处理
                 if(at.endAddress == who
@@ -487,7 +487,7 @@ namespace ContractNotifyCollector.core.task
                 if(at == null)
                 {
                     // 没有竞拍信息，报错停止处理
-                    error(); return;
+                    error(auctionId); return;
                 } 
                 if(at.addwholist == null || at.addwholist.Count == 0)
                 {
@@ -523,10 +523,10 @@ namespace ContractNotifyCollector.core.task
             }
         }
         
-        private void error()
+        private void error(string auctionId="")
         {
-            Console.WriteLine("not find data");
-            throw new Exception("not find data");
+            Console.WriteLine("not find data,auctionId:"+ auctionId);
+            throw new Exception("not find data,auctionId:"+ auctionId);
         }
         
         private AuctionTx queryAuctionTx(string auctionId)
