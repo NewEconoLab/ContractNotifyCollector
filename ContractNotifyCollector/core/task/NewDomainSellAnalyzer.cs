@@ -55,6 +55,7 @@ namespace ContractNotifyCollector.core.task
             notifyDomainCenterColl = cfg["notifyDomainCenterColl"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
+            bonusAddress = cfg["bonusAddress"].ToString();
         }
 
         private void run()
@@ -435,6 +436,17 @@ namespace ContractNotifyCollector.core.task
                         blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                         txid = txid
                     };
+                } else
+                {
+                    if (bonusAddress != address)
+                    {
+                        addwho.accountTime = new AuctionTime
+                        {
+                            blockindex = blockindex,
+                            blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                            txid = txid
+                        };
+                    }
                 }
                 
                 at.addwholist.Add(addwho);
