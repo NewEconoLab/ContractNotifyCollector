@@ -334,7 +334,10 @@ namespace ContractNotifyCollector.core.task
                     // 没有竞拍信息，报错停止处理
                     error(auctionId); return;
                 }
-
+                if(decimal.Parse(at.maxPrice) > decimal.Parse(maxPrice))
+                {
+                    continue;
+                }
                 at.domain = domain;
                 at.parenthash = parenthash;
                 at.domainTTL = domainTTL;
