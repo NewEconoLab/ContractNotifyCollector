@@ -334,17 +334,6 @@ namespace ContractNotifyCollector.core.task
                     // 没有竞拍信息，报错停止处理
                     error(auctionId); return;
                 }
-                // 相同高度特殊处理
-                if(at.domain == domain 
-                    && at.parenthash == parenthash
-                    && at.domainTTL == domainTTL
-                    && at.endTime.blockindex == endBlock
-                    && at.endTime.txid == (endBlock == 0 ? "":txid)
-                    && decimal.Parse(at.maxPrice) > decimal.Parse(maxPrice)
-                    && at.maxBuyer == maxBuyer)
-                {
-                    continue;
-                }
 
                 at.domain = domain;
                 at.parenthash = parenthash;
@@ -424,14 +413,6 @@ namespace ContractNotifyCollector.core.task
                     addwho.address = address;
                     addwho.totalValue = value;
                 }
-                // 相同高度特殊处理
-                /*
-                if (addwho.lastTime != null 
-                    && addwho.lastTime.blockindex == blockindex
-                    && addwho.lastTime.txid == txid)
-                {
-                    continue;
-                }*/
                 if(auctionidIsTo)
                 {
                     addwho.lastTime = new AuctionTime
@@ -470,14 +451,6 @@ namespace ContractNotifyCollector.core.task
                 {
                     // 没有竞拍信息，报错停止处理
                     error(auctionId); return;
-                }
-                // 相同高度特殊处理
-                if(at.endAddress == who
-                    && at.endTime != null
-                    && at.endTime.blockindex == blockindex
-                    && at.endTime.txid == txid)
-                {
-                    continue;
                 }
                 at.endAddress = who;
                 at.endTime = new AuctionTime
@@ -520,13 +493,6 @@ namespace ContractNotifyCollector.core.task
                 {
                     addwho = new AuctionAddWho();
                     addwho.address = who;
-                }
-                // 相同高度特殊处理
-                if(addwho.getdomainTime != null 
-                    && addwho.getdomainTime.blockindex == blockindex
-                    && addwho.getdomainTime.txid == txid)
-                {
-                    continue;
                 }
                 addwho.getdomainTime = new AuctionTime
                 {
@@ -615,12 +581,12 @@ namespace ContractNotifyCollector.core.task
         }
         class AuctionState
         {
-            public const string STATE_START = "0101";
-            public const string STATE_CONFIRM = "0201";
-            public const string STATE_RANDOM = "0301";
+            public const string STATE_START = "0101";   // 开标
+            public const string STATE_CONFIRM = "0201"; // 确定期
+            public const string STATE_RANDOM = "0301";  // 随机期
             public const string STATE_END = "0401"; // 触发结束、3D/5D到期结束
-            public const string STATE_ABORT = "0501";
-            public const string STATE_EXPIRED = "0601";
+            public const string STATE_ABORT = "0501";   // 流拍
+            public const string STATE_EXPIRED = "0601"; // 过期
         }
 
         private Dictionary<string, string> getDomainByHash(string[] parentHashArr)
