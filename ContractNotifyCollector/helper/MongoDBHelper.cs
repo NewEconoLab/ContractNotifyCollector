@@ -91,6 +91,7 @@ namespace ContractNotifyCollector.helper
 
             collection = null;
         }
+        
         public void PutData<T>(string mongodbConnStr, string mongodbDatabase, string coll, T data, bool isAync = false)
         {
             var client = new MongoClient(mongodbConnStr);
@@ -130,7 +131,7 @@ namespace ContractNotifyCollector.helper
             var client = new MongoClient(mongodbConnStr);
             var database = client.GetDatabase(mongodbDatabase);
             var collection = database.GetCollection<BsonDocument>(coll);
-            collection.UpdateMany(BsonDocument.Parse(Jcondition), BsonDocument.Parse(Jdata));
+            collection.UpdateOne(BsonDocument.Parse(Jcondition), BsonDocument.Parse(Jdata));
 
             client = null;
         }
