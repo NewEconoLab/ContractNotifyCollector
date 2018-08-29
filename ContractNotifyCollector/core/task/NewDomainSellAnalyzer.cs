@@ -45,7 +45,7 @@ namespace ContractNotifyCollector.core.task
             localDbConnInfo = Config.localDbConnInfo;
             remoteDbConnInfo = Config.remoteDbConnInfo;
             blockDbConnInfo = Config.blockDbConnInfo;
-
+            
             JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name()).ToArray()[0]["taskInfo"];
 
             auctionRecordColl = cfg["auctionRecordColl"].ToString();
@@ -190,11 +190,11 @@ namespace ContractNotifyCollector.core.task
                  * 0. 开标为开标期
                  * 1. 小于等于三天，确定期
                  * 2. 大于三天，则：
-                 *          a. 超过1Y，则过期
-                 *          b. 超过5D，则结束
-                 *          c. (3,5)结束时间有值，且大于开拍时间，则结束
-                 *          d. (3,5)结束时间无值且前三天无人出价，则流拍
-                 *          e. (3,5)结束时间无值且最后出价在开拍后两天内，则超时3D结束
+                 *          a. 结束时间无值且前三天无人出价，则流拍
+                 *          b. 超过1Y，则过期
+                 *          c. 超过5D，则结束
+                 *          d. (3,5)结束时间有值且大于开拍时间，则结束
+                 *          e. (3,5)结束时间无值且最后出价在开拍后两天内，则结束
                  *          f. (3,5)其余为随机
                  */
 
@@ -338,7 +338,7 @@ namespace ContractNotifyCollector.core.task
                     && at.domainTTL == domainTTL
                     && at.endTime.blockindex == endBlock
                     && at.endTime.txid == (endBlock == 0 ? "":txid)
-                    && at.maxPrice == maxPrice
+                    && decimal.Parse(at.maxPrice) > decimal.Parse(maxPrice)
                     && at.maxBuyer == maxBuyer)
                 {
                     continue;
@@ -415,6 +415,7 @@ namespace ContractNotifyCollector.core.task
                     addwho = addwhoArr[0];
                     at.addwholist.Remove(addwho);
                     addwho.totalValue = auctionidIsTo ? addwho.totalValue + value : addwho.totalValue - value;
+                    
                 } else
                 {
                     addwho = new AuctionAddWho();
@@ -422,12 +423,13 @@ namespace ContractNotifyCollector.core.task
                     addwho.totalValue = value;
                 }
                 // 相同高度特殊处理
+                /*
                 if (addwho.lastTime != null 
                     && addwho.lastTime.blockindex == blockindex
                     && addwho.lastTime.txid == txid)
                 {
                     continue;
-                }
+                }*/
                 if(auctionidIsTo)
                 {
                     addwho.lastTime = new AuctionTime
@@ -565,6 +567,7 @@ namespace ContractNotifyCollector.core.task
             string findstr = new JObject() { { "auctionState", oldState },{ "auctionId", auctionId } }.ToString();
             string newdata = new JObject() { { "$set", new JObject() { { "auctionState", newState } } } }.ToString();
             mh.UpdateData(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, newdata, findstr);
+
         }
         
         class AuctionTx
