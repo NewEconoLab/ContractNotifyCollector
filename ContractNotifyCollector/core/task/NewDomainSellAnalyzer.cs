@@ -74,24 +74,26 @@ namespace ContractNotifyCollector.core.task
                 // 获取本地已处理高度
                 filter = new JObject() { { "contractColl", notifyDomainSellColl } };
                 long localHeight = getContractHeight(localDbConnInfo, auctionRecordColl, filter.ToString());
-                
+
                 // 
-                for (long index = localHeight; index <= remoteHeight+1; index += batchSize)
+                if (remoteHeight <= localHeight)
+                {
+                    log(localHeight, remoteHeight);
+                    break;
+                }
+
+                // 
+                for (long index = localHeight; index <= remoteHeight; index += batchSize)
                 {
                     long nextIndex = index + batchSize;
-                    long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight+1;
+                    long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
                     // 待处理数据
-                    JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gte", index },{ "$lte", endIndex } } } };
+                    JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gt", index },{ "$lte", endIndex } } } };
                     JObject querySortBy = new JObject() { { "blockindex", 1 } };
                     JObject queryField = new JObject() { { "state", 0 } };
                     JArray queryRes = GetDataPagesWithField(remoteDbConnInfo, notifyDomainSellColl, queryField.ToString(), querySortBy.ToString(), queryFilter.ToString());
                     if (queryRes == null || queryRes.Count() == 0)
                     {
-                        if (remoteHeight <= localHeight)
-                        {
-                            log(localHeight, remoteHeight);
-                            break;
-                        }
                         updateDomainRecord(endIndex);
                         log(endIndex, remoteHeight);
                         continue;
