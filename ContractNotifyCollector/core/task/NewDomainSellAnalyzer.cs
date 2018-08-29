@@ -79,7 +79,7 @@ namespace ContractNotifyCollector.core.task
                 if (remoteHeight <= localHeight)
                 {
                     log(localHeight, remoteHeight);
-                    break;
+                    continue;
                 }
 
                 // 
@@ -283,7 +283,8 @@ namespace ContractNotifyCollector.core.task
                             blocktime = 0,
                             txid = ""
                         },
-                        auctionState = AuctionState.STATE_CONFIRM
+                        auctionState = AuctionState.STATE_CONFIRM,
+                        maxPrice = 0
 
                     };
                     insertAuctionTx(at);
@@ -323,7 +324,7 @@ namespace ContractNotifyCollector.core.task
                 string domainTTL = jt["domainTTL"].ToString();
                 long startBlockSelling = long.Parse(jt["startBlockSelling"].ToString());
                 long endBlock = long.Parse(jt["endBlock"].ToString());
-                string maxPrice = jt["maxPrice"].ToString();
+                decimal maxPrice = decimal.Parse(jt["maxPrice"].ToString());
                 string maxBuyer = jt["maxBuyer"].ToString();
                 long lastBlock = long.Parse(jt["lastBlock"].ToString());
                 string txid = jt["txid"].ToString();
@@ -334,7 +335,7 @@ namespace ContractNotifyCollector.core.task
                     // 没有竞拍信息，报错停止处理
                     error(auctionId); return;
                 }
-                if(decimal.Parse(at.maxPrice) > decimal.Parse(maxPrice))
+                if(at.maxPrice > maxPrice)
                 {
                     continue;
                 }
@@ -349,12 +350,16 @@ namespace ContractNotifyCollector.core.task
                 };
                 at.maxPrice = maxPrice;
                 at.maxBuyer = maxBuyer;
+
+                // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
+                /*
                 at.lastTime = new AuctionTime
                 {
                     blockindex = lastBlock,
                     blocktime = lastBlock == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
                     txid = lastBlock == 0 ? "":txid
                 };
+                */
                 replaceAuctionTx(at, auctionId);
                
             }
@@ -423,6 +428,13 @@ namespace ContractNotifyCollector.core.task
                         blockindex = blockindex,
                         blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                         txid = txid
+                    };
+                    // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
+                    at.lastTime = new AuctionTime
+                    {
+                        blockindex = blockindex,
+                        blocktime = blockindex == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
+                        txid = blockindex == 0 ? "" : txid
                     };
                 } else
                 {
@@ -552,7 +564,7 @@ namespace ContractNotifyCollector.core.task
             public string auctionState { get; set; }
             public AuctionTime startTime { get; set; }
             public string startAddress { get; set; }
-            public string maxPrice { get; set; }
+            public decimal maxPrice { get; set; }
             public string maxBuyer { get; set; }
             public AuctionTime endTime { get; set; }
             public string endAddress { get; set; }
