@@ -643,7 +643,8 @@ namespace ContractNotifyCollector.core.task
             JArray res = getData(db, coll, filter);
             if (res != null && res.Count > 0)
             {
-                return long.Parse(Convert.ToString(res.OrderByDescending(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
+                //return long.Parse(Convert.ToString(res.OrderByDescending(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
+                return long.Parse(Convert.ToString(res.OrderBy(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
             }
             return -1;
         }
