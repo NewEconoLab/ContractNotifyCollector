@@ -350,16 +350,13 @@ namespace ContractNotifyCollector.core.task
                 };
                 at.maxPrice = maxPrice;
                 at.maxBuyer = maxBuyer;
-
                 // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
-                /*
                 at.lastTime = new AuctionTime
                 {
-                    blockindex = lastBlock,
-                    blocktime = lastBlock == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
-                    txid = lastBlock == 0 ? "":txid
+                    blockindex = blockindex,
+                    blocktime = blockindex == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = blockindex == 0 ? "" : txid
                 };
-                */
                 replaceAuctionTx(at, auctionId);
                
             }
@@ -414,7 +411,6 @@ namespace ContractNotifyCollector.core.task
                     addwho = addwhoArr[0];
                     at.addwholist.Remove(addwho);
                     addwho.totalValue = auctionidIsTo ? addwho.totalValue + value : addwho.totalValue - value;
-                    
                 } else
                 {
                     addwho = new AuctionAddWho();
@@ -448,7 +444,35 @@ namespace ContractNotifyCollector.core.task
                         };
                     }
                 }
-                
+
+                // 正在处理高度累计加价：待讨论
+                // totalValue = hasTotalValue + curTotalValue
+                // 开始：totalValue -= curTotalValue， curTotalValue = 0
+                // 加价：totalValue += value        ， curTotalValue += value
+                // 完成：hasTotalValue += curTotalValue， curTotalValue = 0， 更新已处理高度
+
+
+
+                // 加价列表
+                if (addwho.addpricelist == null )
+                {
+                    addwho.addpricelist = new List<AuctionAddPrice>();
+                }
+                bool hasExist = addwho.addpricelist.Any(p => p != null && p.time.txid == txid && p.value == value);
+                if(!hasExist)
+                {
+                    addwho.addpricelist.Add(new AuctionAddPrice
+                    {
+                        time = new AuctionTime
+                        {
+                            blockindex = blockindex,
+                            blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                            txid = txid
+                        },
+                        value = value,
+                        isEnd = "0"
+                    });
+                }
                 at.addwholist.Add(addwho);
                 replaceAuctionTx(at, auctionId);
                 
