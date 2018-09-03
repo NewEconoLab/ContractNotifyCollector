@@ -1,4 +1,6 @@
-﻿using System.Linq;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace ContractNotifyCollector.helper
@@ -38,5 +40,33 @@ namespace ContractNotifyCollector.helper
             }
             return sb.ToString();
         }
+
+        public static string Hexstring2String(this string hexstr)
+        {
+            List<byte> byteArray = new List<byte>();
+
+            for (int i = 0; i < hexstr.Length; i = i + 2)
+            {
+                string s = hexstr.Substring(i, 2);
+                byteArray.Add(Convert.ToByte(s, 16));
+            }
+
+            string str = Encoding.UTF8.GetString(byteArray.ToArray());
+
+            return str;
+        }
+
+        public static string String2Hexstring(this string str)
+        {
+            byte[] byteArray = Encoding.UTF8.GetBytes(str);
+            string byteStr = string.Empty;
+            foreach (byte b in byteArray)
+            {
+                byteStr += Convert.ToString(b, 16);
+            }
+
+            return byteStr;
+        }
+        
     }
 }

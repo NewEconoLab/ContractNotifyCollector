@@ -80,7 +80,7 @@ namespace ContractNotifyCollector.core.task
                 // 域名中心-远程高度
                 long maxDomainCenterBlockindex = 0;
                 long hasDomainCenterBlockindex = domainCenterBlockindex;
-                JArray arr = mh.GetDataPagesWithField(localDbConnInfo.connStr, localDbConnInfo.connDB, domainCenterCol, new JObject() { { "blockindex", 1 } }.ToString(), 1, 1, new JObject() { { "blockindex", -1 } }.ToString());
+                JArray arr = mh.GetDataPagesWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainCenterCol, new JObject() { { "blockindex", 1 } }.ToString(), 1, 1, new JObject() { { "blockindex", -1 } }.ToString());
                 if (arr != null && arr.Count() > 0)
                 {
                     maxDomainCenterBlockindex = long.Parse(arr[0]["blockindex"].ToString());
@@ -94,7 +94,7 @@ namespace ContractNotifyCollector.core.task
                     andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$lte", endIndex } } } });
                     JObject domainCenterFilter = new JObject() { { "$and", andFilter } };
                     JObject domainCenterField = new JObject() { { "state", 0 } };
-                    JArray domainCenterRes = mh.GetDataWithField(localDbConnInfo.connStr, localDbConnInfo.connDB, domainCenterCol, domainCenterField.ToString(), domainCenterFilter.ToString());
+                    JArray domainCenterRes = mh.GetDataWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainCenterCol, domainCenterField.ToString(), domainCenterFilter.ToString());
                     if (domainCenterRes != null && domainCenterRes.Count != 0)
                     {
                         processDomainCenter(domainCenterRes);
@@ -111,7 +111,7 @@ namespace ContractNotifyCollector.core.task
                 // 解析器-远程高度
                 long maxDomainResoverBlockindex = 0;
                 long hasDomainResoverBlockindex = domainResoverBlockindex;
-                arr = mh.GetDataPagesWithField(localDbConnInfo.connStr, localDbConnInfo.connDB, domainResolverCol, new JObject() { { "blockindex", 1 } }.ToString(), 1, 1, new JObject() { { "blockindex", -1 } }.ToString());
+                arr = mh.GetDataPagesWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainResolverCol, new JObject() { { "blockindex", 1 } }.ToString(), 1, 1, new JObject() { { "blockindex", -1 } }.ToString());
                 if (arr != null && arr.Count() > 0)
                 {
                     maxDomainResoverBlockindex = long.Parse(arr[0]["blockindex"].ToString());
@@ -125,7 +125,7 @@ namespace ContractNotifyCollector.core.task
                     andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$lte", endIndex } } } });
                     JObject domainCenterFilter = new JObject() { { "$and", andFilter } };
                     domainCenterFilter.Add("protocol", "addr");
-                    JArray domainCenterRes = mh.GetData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainResolverCol, domainCenterFilter.ToString());
+                    JArray domainCenterRes = mh.GetData(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainResolverCol, domainCenterFilter.ToString());
                     if (domainCenterRes != null && domainCenterRes.Count != 0)
                     {
                         procesDomainResolver(domainCenterRes);

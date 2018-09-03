@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using ContractNotifyCollector.core;
 using ContractNotifyCollector.core.task;
 using ContractNotifyCollector.helper;
+using MongoDB.Driver;
 
 /// <summary>
 /// 合约汇总进程
@@ -20,11 +21,11 @@ namespace ContractNotifyCollector
         private static void InitTask()
         {
             Config.loadConfig("config.json");
-            AddTask(new ContractCollector("ContractCollector"));
-            AddTask(new DomainSellAnalyzer("DomainSellAnalyzer"));
+            //AddTask(new ContractNotify("ContractNotify"));
+            //AddTask(new ContractCollector("ContractCollector"));
             AddTask(new DomainCenterAnalyzer("DomainCenterAnalyzer"));
-            AddTask(new DomainCenterAnalyzer("NewDomainCenterAnalyzer"));
-            AddTask(new NewDomainSellAnalyzer("NewDomainSellAnalyzer"));
+            AddTask(new DomainSellAnalyzer("DomainSellAnalyzer"));
+            AddTask(new AuctionStateUpdateTask("AuctionStateUpdateTask"));
         }
 
         /// <summary>
@@ -66,6 +67,7 @@ namespace ContractNotifyCollector
             }
         }
     }
+    
 
     class ProjectInfo
     {

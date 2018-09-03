@@ -1,4 +1,5 @@
-﻿using ContractNotifyCollector.helper;
+﻿using ContractNotifyCollector.core.dao;
+using ContractNotifyCollector.helper;
 using MongoDB.Bson;
 using Newtonsoft.Json.Linq;
 using System;
@@ -7,12 +8,12 @@ using System.Linq;
 
 namespace ContractNotifyCollector.core.task
 {
-    class NewDomainSellAnalyzer : ContractTask
+    class DomainSellAnalyzer : ContractTask
     {
         private JObject config;
         private MongoDBHelper mh = new MongoDBHelper();
 
-        public NewDomainSellAnalyzer(string name) : base(name)
+        public DomainSellAnalyzer(string name) : base(name)
         {
         }
 
@@ -60,13 +61,11 @@ namespace ContractNotifyCollector.core.task
 
         private void run()
         {
-            while(true)
+            clearCurAddprice();
+            while (true)
             {
                 ping();
-
-                // 更新状态
-                updateState();
-
+                
                 // 获取远程已同步高度
                 JObject filter = new JObject() { { "contractHash", notifyDomainSellColl } };
                 long remoteHeight = getContractHeight(remoteDbConnInfo, notifyRecordColl, filter.ToString());
@@ -81,7 +80,7 @@ namespace ContractNotifyCollector.core.task
                     log(localHeight, remoteHeight);
                     continue;
                 }
-
+                
                 // 
                 for (long index = localHeight; index <= remoteHeight; index += batchSize)
                 {
@@ -155,7 +154,12 @@ namespace ContractNotifyCollector.core.task
                         {
                             updateR5(rr, blockindex, blockindexDict);
                         }
-                        if(blockindex != localHeight)
+
+                        // 更新已处理累加
+                        updateCurAddprice();
+
+                        // 更新高度
+                        if (blockindex != localHeight)
                         {
                             updateDomainRecord(blockindex);
                         }
@@ -163,91 +167,15 @@ namespace ContractNotifyCollector.core.task
                     }
 
                     
+
+
+
                 }
             }
         }
-        
-        private const long ONE_DAY_SECONDS = 1 * /*24 * 60 * */60 /*测试时5分钟一天*/* 5;
-        private const long TWO_DAY_SECONDS = ONE_DAY_SECONDS * 2;
-        private const long THREE_DAY_SECONDS = ONE_DAY_SECONDS * 3;
-        private const long FIVE_DAY_SECONDS = ONE_DAY_SECONDS * 5;
-        private const long ONE_YEAR_SECONDS = ONE_DAY_SECONDS * 365;
 
-        private void updateState()
-        {
-            string filter = MongoFieldHelper.toFilter(new string[] { AuctionState.STATE_START, AuctionState.STATE_CONFIRM, AuctionState.STATE_RANDOM}, "auctionState").ToString();
-            List<AuctionTx> list = mh.GetData<AuctionTx>(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, filter);
-            if(list == null || list.Count == 0)
-            {
-                return;
-            }
-            foreach (AuctionTx jo in list)
-            {
-                long nowtime = TimeHelper.GetTimeStamp();
-                long starttime = jo.startTime.blocktime;
-                string oldState = jo.auctionState;
-
-                /**
-                 * 状态判断逻辑：
-                 * 0. 开标为开标期
-                 * 1. 小于等于三天，确定期
-                 * 2. 大于三天，则：
-                 *          a. 结束时间无值且前三天无人出价，则流拍
-                 *          b. 超过1Y，则过期
-                 *          c. 超过5D，则结束
-                 *          d. (3,5)结束时间有值且大于开拍时间，则结束
-                 *          e. (3,5)结束时间无值且最后出价在开拍后两天内，则结束
-                 *          f. (3,5)其余为随机
-                 */
-
-                string newState = null;
-                if(nowtime - starttime <= THREE_DAY_SECONDS)
-                {
-                    // 小于三天
-                    newState = AuctionState.STATE_CONFIRM;
-                } else
-                {
-                    // 大于三天
-                    if (jo.lastTime == null || jo.lastTime.blockindex == 0)
-                    {
-                        // (3,5)结束时间无值且前三天无人出价，则流拍
-                        newState = AuctionState.STATE_ABORT;
-                    }
-                    else if (nowtime > starttime + ONE_YEAR_SECONDS)
-                    {
-                        // 超过1Y，则过期
-                        newState = AuctionState.STATE_EXPIRED;
-                    }
-                    else if (nowtime >= starttime + FIVE_DAY_SECONDS)
-                    {
-                        // 超过5D，则结束
-                        newState = AuctionState.STATE_END;
-                    }
-                    else if (jo.endTime != null && jo.endTime.blocktime > starttime)
-                    {
-                        // (3,5)结束时间有值，且大于开拍时间，则结束
-                        newState = AuctionState.STATE_END;
-                    }
-                    else if (jo.lastTime.blocktime <= starttime + TWO_DAY_SECONDS)
-                    {
-                        // (3,5)结束时间无值且最后出价在开拍后两天内，则超时3D结束
-                        newState = AuctionState.STATE_END;
-                    }
-                    else
-                    {
-                        // 其余为随机期
-                        newState = AuctionState.STATE_RANDOM;
-                    }
-                }
-
-                if(oldState != newState)
-                {
-                    updateAuctionState(newState, oldState, jo.auctionId);
-                }
-                
-            }
-
-        }
+        private const long THREE_DAY_SECONDS = 3* (1 * /*24 * 60 * */60 /*测试时5分钟一天*/* 5);
+        private const long ONE_YEAR_SECONDS = 365* (1 * /*24 * 60 * */60 /*测试时5分钟一天*/* 5);
         private void updateR1(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
         {// startAuction
 
@@ -261,6 +189,7 @@ namespace ContractNotifyCollector.core.task
                 string parenthash = jt["parenthash"].ToString();
                 string who = jt["who"].ToString();
                 string txid = jt["txid"].ToString();
+                long time = blockindexDict.GetValueOrDefault(blockindex + "");
                 AuctionTx at = queryAuctionTx(auctionId);
                 if (at == null)
                 {
@@ -274,17 +203,18 @@ namespace ContractNotifyCollector.core.task
                         startTime = new AuctionTime
                         {
                             blockindex = blockindex,
-                            blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                            blocktime = time,
                             txid = txid
                         },
                         endTime = new AuctionTime
                         {
                             blockindex = 0,
-                            blocktime = 0,
+                            blocktime = time + THREE_DAY_SECONDS,
                             txid = ""
                         },
                         auctionState = AuctionState.STATE_CONFIRM,
-                        maxPrice = 0
+                        maxPrice = 0,
+                        domainTTL = time + ONE_YEAR_SECONDS,
 
                     };
                     insertAuctionTx(at);
@@ -305,10 +235,12 @@ namespace ContractNotifyCollector.core.task
                     at.endTime = new AuctionTime
                     {
                         blockindex = 0,
-                        blocktime = 0,
+                        blocktime = time + THREE_DAY_SECONDS,
                         txid = ""
                     };
                     at.auctionState = AuctionState.STATE_CONFIRM;
+                    at.maxPrice = 0;
+                    at.domainTTL = time + ONE_YEAR_SECONDS;
                     replaceAuctionTx(at, auctionId);
                 }
 
@@ -321,7 +253,7 @@ namespace ContractNotifyCollector.core.task
                 string auctionId = jt["auctionId"].ToString();
                 string domain = jt["domain"].ToString();
                 string parenthash = jt["parenthash"].ToString();
-                string domainTTL = jt["domainTTL"].ToString();
+                //string domainTTL = jt["domainTTL"].ToString();
                 long startBlockSelling = long.Parse(jt["startBlockSelling"].ToString());
                 long endBlock = long.Parse(jt["endBlock"].ToString());
                 decimal maxPrice = decimal.Parse(jt["maxPrice"].ToString());
@@ -341,13 +273,17 @@ namespace ContractNotifyCollector.core.task
                 }
                 at.domain = domain;
                 at.parenthash = parenthash;
-                at.domainTTL = domainTTL;
-                at.endTime = new AuctionTime
+                //at.domainTTL = domainTTL;
+                if(endBlock != 0)
                 {
-                    blockindex = endBlock,
-                    blocktime = endBlock == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
-                    txid = endBlock == 0 ? "" : txid
-                };
+                    at.endTime = new AuctionTime
+                    {
+                        blockindex = endBlock,
+                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                        txid = txid
+                    };
+                }
+               
                 at.maxPrice = maxPrice;
                 at.maxBuyer = maxBuyer;
                 // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
@@ -372,7 +308,7 @@ namespace ContractNotifyCollector.core.task
 
                 decimal value = decimal.Parse(jt["value"].ToString());
                 string txid = jt["txid"].ToString();
-
+                
                 bool auctionidIsTo = true;
                 string auctionId = null;
                 string address = null;
@@ -410,14 +346,22 @@ namespace ContractNotifyCollector.core.task
                 {
                     addwho = addwhoArr[0];
                     at.addwholist.Remove(addwho);
-                    addwho.totalValue = auctionidIsTo ? addwho.totalValue + value : addwho.totalValue - value;
+                    //addwho.totalValue = auctionidIsTo ? addwho.totalValue + value : addwho.totalValue - value;
                 } else
                 {
                     addwho = new AuctionAddWho();
                     addwho.address = address;
-                    addwho.totalValue = value;
+                    addwho.totalValue = 0;
+                    addwho.curTotalValue = 0;
+                    //addwho.totalValue = value;
                 }
-                if(auctionidIsTo)
+                bool isPositiveFlag = auctionidIsTo || (!auctionidIsTo && address == bonusAddress);
+                if (isPositiveFlag)
+                {
+                    addwho.totalValue += value;
+                    addwho.curTotalValue += value;
+                }
+                if (auctionidIsTo)
                 {
                     addwho.lastTime = new AuctionTime
                     {
@@ -446,13 +390,11 @@ namespace ContractNotifyCollector.core.task
                 }
 
                 // 正在处理高度累计加价：待讨论
-                // totalValue = hasTotalValue + curTotalValue
+                // totalValue = curTotalValue
                 // 开始：totalValue -= curTotalValue， curTotalValue = 0
                 // 加价：totalValue += value        ， curTotalValue += value
-                // 完成：hasTotalValue += curTotalValue， curTotalValue = 0， 更新已处理高度
-
-
-
+                // 完成：curTotalValue = 0， 更新已处理高度
+                
                 // 加价列表
                 if (addwho.addpricelist == null )
                 {
@@ -469,8 +411,8 @@ namespace ContractNotifyCollector.core.task
                             blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                             txid = txid
                         },
-                        value = value,
-                        isEnd = "0"
+                        value = isPositiveFlag ? value : value * -1,
+                        isEnd = isPositiveFlag ? "0" : "1"
                     });
                 }
                 at.addwholist.Add(addwho);
@@ -544,6 +486,40 @@ namespace ContractNotifyCollector.core.task
             }
         }
         
+        private void clearCurAddprice()
+        {
+            clearOrUpdateCurAddprice(true);
+        }
+        private void updateCurAddprice()
+        {
+            clearOrUpdateCurAddprice(false);
+        }
+        private void clearOrUpdateCurAddprice(bool isClear)
+        {
+            string filter = new JObject() { { "addwholist.curTotalValue", new JObject() { { "$gt", "0"} } } }.ToString();
+            List<AuctionTx> list = mh.GetData<AuctionTx>(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, filter);
+            if (list == null || list.Count == 0)
+            {
+                return;
+            }
+            list.Where(p => p.addwholist != null).Select(p =>
+            {
+                p.addwholist =
+                    p.addwholist.Select(pk =>
+                    {
+                        if(isClear)
+                        {
+                            pk.totalValue -= pk.curTotalValue;
+                        }
+                        pk.curTotalValue = 0;
+                        return pk;
+                    }).ToList();
+                // 更新数据
+                string findStr = new JObject() { {"auctionId", p.auctionId } }.ToString();
+                mh.ReplaceData<AuctionTx>(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, p, findStr);
+                return p;
+            }).ToArray();
+        }
         private void error(string auctionId="")
         {
             Console.WriteLine("not find data,auctionId:"+ auctionId);
@@ -575,57 +551,6 @@ namespace ContractNotifyCollector.core.task
             string newdata = new JObject() { { "$set", new JObject() { { "auctionState", newState } } } }.ToString();
             mh.UpdateData(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, newdata, findstr);
 
-        }
-        
-        class AuctionTx
-        {
-            public ObjectId _id { get; set; }
-            public string auctionId { get; set; }
-            public string domain { get; set; }
-            public string parenthash { get; set; }
-            public string fulldomain { get; set; }
-            public string domainTTL { get; set; }
-            public string auctionState { get; set; }
-            public AuctionTime startTime { get; set; }
-            public string startAddress { get; set; }
-            public decimal maxPrice { get; set; }
-            public string maxBuyer { get; set; }
-            public AuctionTime endTime { get; set; }
-            public string endAddress { get; set; }
-            public AuctionTime lastTime { get; set; }
-            public List<AuctionAddWho> addwholist {get; set;}
-
-        }
-        class AuctionAddWho
-        {
-            public string address { get; set; }
-            public decimal totalValue { get; set; }
-            public AuctionTime lastTime { get; set; }
-            public AuctionTime accountTime { get; set; }
-            public AuctionTime getdomainTime { get; set; }
-            public List<AuctionAddPrice> addpricelist { get; set; }
-
-        }
-        class AuctionAddPrice
-        {
-            public AuctionTime time { get; set; }
-            public decimal value { get; set; }
-            public string isEnd { get; set; }
-        }
-        class AuctionTime
-        {
-            public long blockindex { get; set; }
-            public long blocktime { get; set; }
-            public string txid { get; set; }
-        }
-        class AuctionState
-        {
-            public const string STATE_START = "0101";   // 开标
-            public const string STATE_CONFIRM = "0201"; // 确定期
-            public const string STATE_RANDOM = "0301";  // 随机期
-            public const string STATE_END = "0401"; // 触发结束、3D/5D到期结束
-            public const string STATE_ABORT = "0501";   // 流拍
-            public const string STATE_EXPIRED = "0601"; // 过期
         }
 
         private Dictionary<string, string> getDomainByHash(string[] parentHashArr)
@@ -707,7 +632,7 @@ namespace ContractNotifyCollector.core.task
         }
         private void log(long localHeight, long remoteHeight)
         {
-            Console.WriteLine(DateTime.Now + string.Format(" {0}.nnsRegisterSellContract processed at {1}/{2}", name(), localHeight, remoteHeight));
+            Console.WriteLine(DateTime.Now + string.Format(" {0}.self processed at {1}/{2}", name(), localHeight, remoteHeight));
         }
         private void ping()
         {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using ContractNotifyCollector.helper;
 using Newtonsoft.Json.Linq;
@@ -32,7 +33,7 @@ namespace ContractNotifyCollector.core.task
             run();
         }
 
-
+        private JObject subConfig;
         private MongoDBHelper mh = new MongoDBHelper();
         private DbConnInfo remoteDbConnInfo;
         private DbConnInfo localDbConnInfo;
@@ -42,9 +43,12 @@ namespace ContractNotifyCollector.core.task
         private int interval = 1000;
         private void init()
         {
+            string filename = config["TaskConfig"][name()].ToString();
+            subConfig = JObject.Parse(File.ReadAllText(filename));
+
             // DB连接信息
-            string startNetType = config["startNetType"].ToString();
-            var connInfo = config["connList"].Children().Where(p => p["netType"].ToString() == startNetType).First();
+            string startNetType = subConfig["netType"].ToString();
+            var connInfo = subConfig["connList"].Children().Where(p => p["netType"].ToString() == startNetType).First();
             remoteDbConnInfo = getDbConnInfo(connInfo, true);
             localDbConnInfo = getDbConnInfo(connInfo, false);
 
@@ -63,7 +67,7 @@ namespace ContractNotifyCollector.core.task
             }).ToDictionary(itemKey => Convert.ToString(itemKey["name"]), itemVal => itemVal);
 
             // 高度记录表对应关系
-            JObject recordMap = (JObject)config["HeightRecordMap"];
+            JObject recordMap = (JObject)subConfig["heightMap"];
             remoteColl = recordMap["remoteColl"].ToString();
             localColl = recordMap["localColl"].ToString();
         }
