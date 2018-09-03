@@ -214,7 +214,7 @@ namespace ContractNotifyCollector.core.task
                         },
                         auctionState = AuctionState.STATE_CONFIRM,
                         maxPrice = 0,
-                        domainTTL = time + ONE_YEAR_SECONDS,
+                        ttl = time + ONE_YEAR_SECONDS,
 
                     };
                     insertAuctionTx(at);
@@ -240,7 +240,7 @@ namespace ContractNotifyCollector.core.task
                     };
                     at.auctionState = AuctionState.STATE_CONFIRM;
                     at.maxPrice = 0;
-                    at.domainTTL = time + ONE_YEAR_SECONDS;
+                    at.ttl = time + ONE_YEAR_SECONDS;
                     replaceAuctionTx(at, auctionId);
                 }
 
@@ -308,6 +308,10 @@ namespace ContractNotifyCollector.core.task
 
                 decimal value = decimal.Parse(jt["value"].ToString());
                 string txid = jt["txid"].ToString();
+                //if(txid == "0x8c86ce79a0074d8ca9e0a7f78f8d5326ca8ab6fadf86569094c9ca4ebca16037")
+                {
+                   // throw new Exception("TTT");
+                }
                 
                 bool auctionidIsTo = true;
                 string auctionId = null;

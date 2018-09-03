@@ -10,7 +10,7 @@ namespace ContractNotifyCollector.core.dao
         public string domain { get; set; }
         public string parenthash { get; set; }
         public string fulldomain { get; set; }
-        public long domainTTL { get; set; }
+        public long ttl { get; set; }
         public string auctionState { get; set; }
         public AuctionTime startTime { get; set; }
         public string startAddress { get; set; }
