@@ -209,7 +209,7 @@ namespace ContractNotifyCollector.core.task
                         endTime = new AuctionTime
                         {
                             blockindex = 0,
-                            blocktime = time + THREE_DAY_SECONDS,
+                            blocktime = 0,// time + THREE_DAY_SECONDS,
                             txid = ""
                         },
                         auctionState = AuctionState.STATE_CONFIRM,
@@ -235,7 +235,7 @@ namespace ContractNotifyCollector.core.task
                     at.endTime = new AuctionTime
                     {
                         blockindex = 0,
-                        blocktime = time + THREE_DAY_SECONDS,
+                        blocktime = 0,//time + THREE_DAY_SECONDS,
                         txid = ""
                     };
                     at.auctionState = AuctionState.STATE_CONFIRM;

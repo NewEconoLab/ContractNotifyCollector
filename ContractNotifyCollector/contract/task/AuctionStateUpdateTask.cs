@@ -156,12 +156,8 @@ namespace ContractNotifyCollector.core.task
         private void updateAuctionState(string newState, string oldState, string auctionId, long endTimeBlocktime=0)
         {
             string findstr = new JObject() { { "auctionState", oldState }, { "auctionId", auctionId } }.ToString();
-            //string newdata = new JObject() { { "$set", new JObject() { { "auctionState", newState } } } }.ToString();
-            string newdata = endTimeBlocktime == 0
-                ? new JObject() { { "$set", new JObject() { { "auctionState", newState } } } }.ToString()
-                : new JObject() { { "$set", new JObject() { { "auctionState", newState }, { "endTime.blocktime", endTimeBlocktime } } } }.ToString();
+            string newdata = new JObject() { { "$set", new JObject() { { "auctionState", newState } } } }.ToString();
             mh.UpdateData(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, newdata, findstr);
-
         }
 
         private const long ONE_DAY_SECONDS = 1 * /*24 * 60 * */60 /*测试时5分钟一天*/* 5;
