@@ -21,7 +21,7 @@ namespace ContractNotifyCollector.core.task
         {
         }
 
-        public override void Init(JObject config)
+        public override void initConfig(JObject config)
         {
             this.config = config;
             init();
@@ -42,27 +42,34 @@ namespace ContractNotifyCollector.core.task
         private string domainOwnerCol;
         private int batchSize;
         private int batchInterval;
+        private bool initSuccFlag = false;
 
         private void init()
         {
-            localDbConnInfo = Config.localDbConnInfo;
-            remoteDbConnInfo = Config.remoteDbConnInfo;
-
-            JArray arr = (JArray)config["TaskList"];
-            JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name()).ToArray()[0]["taskInfo"];
+            //JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name()).ToArray()[0]["taskInfo"];
+            JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name() && p["taskNet"].ToString() == networkType()).ToArray()[0]["taskInfo"];
+            
             domainCenterCol = cfg["domainCenterCol"].ToString();
             domainResolverCol = cfg["domainResolverCol"].ToString();
             domainRecord = cfg["domainRecord"].ToString();
             domainOwnerCol = cfg["domainOwnerCol"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
+
+            // db info
+            localDbConnInfo = Config.localDbConnInfo;
+            remoteDbConnInfo = Config.remoteDbConnInfo;
+            //
+            initSuccFlag = true;
         }
+        
         private void run()
         {
+            if (!initSuccFlag) return;
             while (true)
             {
                 ping();
-                
+
                 // 本地高度
                 long domainCenterBlockindex = 0;
                 long domainResoverBlockindex = 0;

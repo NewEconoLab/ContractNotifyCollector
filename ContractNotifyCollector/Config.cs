@@ -29,13 +29,15 @@ namespace ContractNotifyCollector
         public static DbConnInfo remoteDbConnInfo;
         public static DbConnInfo localDbConnInfo;
         public static DbConnInfo blockDbConnInfo;
+        public static DbConnInfo notifyDbConnInfo;
         private static void initDb()
         {
             string startNetType = config["startNetType"].ToString();
-            var connInfo = config["connList"].Children().Where(p => p["netType"].ToString() == startNetType).First();
+            var connInfo = config["DBConnInfoList"].Children().Where(p => p["netType"].ToString() == startNetType).First();
             remoteDbConnInfo = getDbConnInfo(connInfo, 1);
             localDbConnInfo = getDbConnInfo(connInfo, 2);
             blockDbConnInfo = getDbConnInfo(connInfo, 3);
+            notifyDbConnInfo = getDbConnInfo(connInfo, 4);
         }
         private static DbConnInfo getDbConnInfo(JToken conn, int flag)
         {
@@ -63,7 +65,20 @@ namespace ContractNotifyCollector
                     connDB = conn["blockDatabase"].ToString()
                 };
             }
+            else if (flag == 4)
+            {
+                return new DbConnInfo
+                {
+                    connStr = conn["notifyConnStr"].ToString(),
+                    connDB = conn["notifyDatabase"].ToString()
+                };
+            }
             return null;
+        }
+
+        public string getNetType()
+        {
+            return config["startNetType"].ToString();
         }
     }
     class DbConnInfo

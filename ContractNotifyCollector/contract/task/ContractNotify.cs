@@ -1,21 +1,25 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Linq;
 using ContractNotifyCollector.helper;
 using Newtonsoft.Json.Linq;
 
 namespace ContractNotifyCollector.core.task
 {
+    /// <summary>
+    /// 合约通知解析主类
+    /// 
+    /// 其余任务均基于该类分析结果数据
+    /// 
+    /// </summary>
     class ContractNotify : ContractTask
     {
         private JObject config;
         public ContractNotify(string name) : base(name)
         {
-
         }
-        public override void Init(JObject config)
+        public override void initConfig(JObject config)
         {
             this.config = config;
             initConfig();
@@ -26,224 +30,317 @@ namespace ContractNotifyCollector.core.task
             run();
         }
 
-        private JObject subConfig;
+        private MongoDBHelper mh = new MongoDBHelper();
         private DbConnInfo localConn;
         private DbConnInfo remoteConn;
-        private int batchSize = 500;
-        private int batchInterval = 2000;
+        Dictionary<string, JArray> structDict;
+        private string notifyCounterColl;
+        private string notifyColl;
+        private string contractCounterColl;
+        private int batchSize;
+        private int batchInterval;
+        private bool initSuccFlag = false;
+
         private void initConfig()
         {
             string filename = config["TaskConfig"][name()].ToString();
-            subConfig = JObject.Parse(File.ReadAllText(filename));
+            JObject subConfig = JObject.Parse(File.ReadAllText(filename));
+            if(subConfig["taskNet"].ToString() != networkType())
+            {
+                throw new Exception("NotFindConfig");
+            }
 
-            localConn = Config.remoteDbConnInfo;
+            structDict = ((JArray)subConfig["taskList"]).ToDictionary(
+                k => getKey(k["contractHash"].ToString(), k["notifyDisplayName"].ToString()), 
+                v => (JArray)v["notifyStructure"]);
+            notifyCounterColl = subConfig["notifyCounterColl"].ToString();
+            notifyColl = subConfig["notifyColl"].ToString();
+            contractCounterColl = subConfig["contractCounterColl"].ToString();
+            batchSize = int.Parse(subConfig["batchSize"].ToString());
+            batchInterval = int.Parse(subConfig["batchInterval"].ToString());
+
+            // db info
+            localConn = Config.localDbConnInfo;
             remoteConn = Config.blockDbConnInfo;
+            //
+            initSuccFlag = true;
         }
+
+        private string getKey(string contractHash, string displayName)
+        {
+            return contractHash + displayName;
+        }
+        private JArray getVal(string contractHash, string displayName)
+        {
+            return structDict.GetValueOrDefault(getKey(contractHash, displayName));
+        }
+        private bool hasKey(string contractHash)
+        {
+            return structDict.Keys.Any(p => p.StartsWith(contractHash));
+        }
+
         private void run()
         {
-            //
-            int taskID = 0;
-            foreach (JObject task in subConfig["taskList"])
+            if (!initSuccFlag) return;
+            while (true)
             {
-                string netType = task["netType"].ToString();
-                new Task(() => {
-                    while(true)
-                    {
-                        extractNotifyInfo(task);
-                        Thread.Sleep(batchInterval);
-                    }
-                }).Start();
-                ++taskID;
-            }
-        }
+                ping();
 
-        private MongoDBHelper mh = new MongoDBHelper();
-        private void extractNotifyInfo(JObject task)
-        {
-            string taskContractHash = task["contractHash"].ToString();
-            string taskNotifyDisplayName = task["notifyDisplayName"].ToString();
-            JArray taskNotifyStructure = (JArray)task["notifyStructure"];
+                // 获取远程已同步高度
+                long remoteHeight = getRemoteHeight();
 
-            // 本地已同步高度
-            long localHeight = GetLocalHeight(taskContractHash, taskNotifyDisplayName);
+                // 获取本地已处理高度
+                long localHeight = getLocalHeight();
 
-            // 远程高度
-            long remoteHeight = GetRemoteHeight("notify");
-
-            // 
-            for (long index = localHeight; index <= remoteHeight + 1; index += batchSize)
-            {
-                long nextIndex = index + batchSize;
-                long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight + 1;
-                // 待处理数据
-                JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gte", index }, { "$lte", endIndex } } } };
-                JObject querySortBy = new JObject() { { "blockindex", 1 } };
-                JObject queryField = new JObject() { { "state", 0 } };
-                JArray queryRes = GetRemoteData(taskContractHash, taskNotifyDisplayName, index, endIndex);
-                if (queryRes == null || queryRes.Count == 0)
+                //
+                if (remoteHeight <= localHeight)
                 {
-                    if (remoteHeight <= localHeight)
-                    {
-                        log(localHeight, remoteHeight, taskContractHash, taskNotifyDisplayName);
-                        break;
-                    }
-                    UpdateLocalHeight(taskContractHash, taskNotifyDisplayName, endIndex);
-                    log(endIndex, remoteHeight, taskContractHash, taskNotifyDisplayName);
+                    log(localHeight, remoteHeight);
                     continue;
                 }
 
-                foreach (JObject jo in queryRes)
+                for (long startIndex = localHeight; startIndex <= remoteHeight; startIndex += batchSize)
                 {
-                    long blockindex = long.Parse(jo["blockindex"].ToString());
-                    string txid = jo["txid"].ToString();
-                    JArray notifications = (JArray)jo["notifications"];
-
-                    int n = 0; //标记notify在一个tx里的序号
-                    foreach (JObject notify in notifications)
+                    long nextIndex = startIndex + batchSize;
+                    long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
+                    // 待处理数据
+                    JArray res = GetRemoteData(startIndex, endIndex);
+                    if(res == null || res.Count == 0)
                     {
-                        string dataContractHash = notify["contract"].ToString();
-                        string stateType = notify["state"]["type"].ToString();
-                        if (stateType != "Array")
+                        updateLocalRecord(endIndex);
+                        log(endIndex, remoteHeight);
+                        continue;
+                    }
+                    // 分析数据
+                    long[] blockindexArr = res.Select(p => long.Parse(p["blockindex"].ToString())).Distinct().OrderBy(p => p).ToArray();
+                    foreach (long blockindex in blockindexArr)
+                    {
+                        // 解析
+                        JArray notifyInfoArr = new JArray();
+                        foreach (JObject jo in res.Where(p => long.Parse(p["blockindex"].ToString()) == blockindex))
                         {
-                            continue;
-                        }
-                        JArray stateValue = (JArray)notify["state"]["value"];
-                        string dataNotifyDisplayName = stateValue[0]["value"].ToString().Hexstring2String();
-                        if (dataContractHash != taskContractHash || dataNotifyDisplayName != taskNotifyDisplayName)
-                        {
-                            continue;
-                        }
+                            string txid = jo["txid"].ToString();
+                            string vmstate = jo["vmstate"].ToString();
+                            // stack...
 
-                        JObject newNotifyInfo = new JObject();
-                        newNotifyInfo.Add("blockindex", blockindex);
-                        newNotifyInfo.Add("txid", txid);
-                        newNotifyInfo.Add("n", n++);
-
-                        int i = 0;
-                        foreach (JObject jv in stateValue)
-                        {
-                            string notifyType = jv["type"].ToString();
-                            if (notifyType == "Array")
+                            JArray notifications = (JArray)jo["notifications"];
+                            int n = 0;
+                            foreach (JObject notification in notifications)
                             {
-                                JArray JAarrayValue = (JArray)jv["value"];
-                                int j = 0;
-                                foreach (JObject JvalueLevel2 in JAarrayValue)
+                                string contractHash = notification["contract"].ToString();
+                                if (!hasKey(contractHash)) continue;
+                                JArray JAstate = (JArray)notification["state"]["value"];
+                                string displayName = JAstate[0]["value"].ToString().Hexstring2String();
+                                JArray notifyStruct = getVal(contractHash, displayName);
+                                if (notifyStruct == null || notifyStruct.Count == 0) continue;
+                                // 索引信息
+                                JObject notifyInfo = new JObject();
+                                notifyInfo.Add("blockindex", blockindex);
+                                notifyInfo.Add("txid", txid);
+                                notifyInfo.Add("n", n);
+                                notifyInfo.Add("vmstate", vmstate);
+                                notifyInfo.Add("contractHash", contractHash);
+
+                                // 存储解析数据
+                                int i = 0;
+                                foreach (JObject jv in JAstate)
                                 {
-                                    JObject JtaskEscapeInfo = (JObject)taskNotifyStructure[i]["arrayData"][j];
-                                    string taskName = JtaskEscapeInfo["name"].ToString();
-                                    string notifyType2 = JvalueLevel2["type"].ToString();
-                                    string notifyValueSrc2 = JvalueLevel2["value"].ToString();
-                                    //如果处理失败则不处理（用原值）
-                                    string notifyValueDst2 = escapeHelper.contractDataEscap(notifyType2, notifyValueSrc2, JtaskEscapeInfo);
-                                    try
+                                    string type = jv["type"].ToString();
+                                    if (type == "Array")
                                     {
-                                        newNotifyInfo.Add(taskName, notifyValueDst2);
+                                        // Array
+                                        JArray value = (JArray)jv["value"];
+                                        int j = 0;
+                                        foreach (JObject jvv in value)
+                                        {
+                                            string typeLevel2 = jvv["type"].ToString();
+                                            string valueLevel2 = jvv["value"].ToString();
+                                            JObject taskEscape = (JObject)notifyStruct[i]["arrayData"][j];
+                                            string taskName = taskEscape["name"].ToString();
+                                            string taskValue = escapeHelper.contractDataEscap(typeLevel2, valueLevel2, taskEscape);
+                                            try
+                                            {
+                                                notifyInfo.Add(taskName, taskValue);
+                                            }
+                                            catch
+                                            {// txid重名
+                                                notifyInfo.Add("_" + taskName, taskValue);
+                                            }
+                                            ++j;
+                                        }
                                     }
-                                    catch
-                                    {//重名
-                                        newNotifyInfo.Add("_" + taskName, notifyValueDst2);
+                                    else
+                                    {
+                                        // ByteArray + other
+                                        string value = jv["value"].ToString();
+                                        JObject taskEscape = (JObject)notifyStruct[i];
+                                        string taskName = taskEscape["name"].ToString();
+                                        string taskValue = escapeHelper.contractDataEscap(type, value, taskEscape);
+                                        try
+                                        {
+                                            notifyInfo.Add(taskName, taskValue);
+                                        }
+                                        catch
+                                        {// txid重名
+                                            notifyInfo.Add("_" + taskName, taskValue);
+                                        }
                                     }
-                                    ++j;
+                                    ++i;
                                 }
+                                // 原始state数据
+                                notifyInfo.Add("state", notification["state"]);
+
+                                // 单条入库或者批量入库，这里采用批量入库方式
+                                notifyInfoArr.Add(notifyInfo);
+
+
                             }
-                            else
-                            {
-                                JObject taskEscapeInfo = (JObject)taskNotifyStructure[i];
-                                string taskName = taskEscapeInfo["name"].ToString();
-                                string notifyValueSrc = jv["value"].ToString();
-                                string notifyValueDst = escapeHelper.contractDataEscap(notifyType, notifyValueSrc, taskEscapeInfo);
-                                try
-                                {
-                                    newNotifyInfo.Add(taskName, notifyValueDst);
-                                }
-                                catch
-                                {//重名
-                                    newNotifyInfo.Add("_" + taskName, notifyValueDst);
-                                }
-                            }
-                            ++i;
                         }
 
-
-                        // 入库
-                        //string filterStr = new JObject() { { "blockindex", blockindex }, { "txid", txid }, { "n", n++ }, { "displayName", taskNotifyDisplayName } }.ToString();
-                        JObject cc = (JObject)newNotifyInfo.DeepClone();
-                        cc.Remove("state");
-                        cc.Remove("getTime");
-                        string filterStr = cc.ToString();
-
-                        if (mh.GetDataCount(localConn.connStr, localConn.connDB, taskContractHash, filterStr) <= 0)
+                        // 入库==>分组(分表)
+                        notifyInfoArr.GroupBy(p => p["contractHash"], (k, g) =>
                         {
-                            mh.PutData(localConn.connStr, localConn.connDB, taskContractHash, newNotifyInfo.ToString());
-
-                            // 更新高度
-                            UpdateLocalHeight(taskContractHash, taskNotifyDisplayName, blockindex);
-                        }
-                        log(blockindex, remoteHeight, taskContractHash, taskNotifyDisplayName);
-
+                            string contractHash = k.ToString();
+                            long count = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, new JObject() { { "blockindex", blockindex } }.ToString());
+                            if(count <= 0)
+                            {
+                                mh.PutData(localConn.connStr, localConn.connDB, contractHash, new JArray() { g });
+                            }
+                            return new JArray();
+                        }).ToArray(); ;
+                        // 更新高度
+                        updateLocalRecord(blockindex);
+                        log(blockindex, remoteHeight);
                     }
 
                 }
-            }
-            
 
+            }
         }
 
-        
-        private long GetLocalHeight(string contractHash, string displayName)
+        private JArray processNotifications(JArray notifications, long blockindex, string txid, string vmstate/*, JArray vmstate*/)
         {
-            JArray res = mh.GetData(localConn.connStr, localConn.connDB, "contractStorageHeight", new JObject() { { "contractHash", contractHash }, { "displayName", displayName } }.ToString());
-            if(res == null || res.Count == 0)
+            JArray notifyInfoArr = new JArray();
+            int n = 0;
+            foreach (JObject notification in notifications)
             {
-                return 0;
+                string contractHash = notification["contract"].ToString();
+                if (!hasKey(contractHash)) continue;
+                JArray JAstate = (JArray)notification["state"]["value"];
+                string displayName = JAstate[0]["value"].ToString().Hexstring2String();
+                JArray notifyStruct = getVal(contractHash, displayName);
+                if (notifyStruct == null || notifyStruct.Count == 0) continue;
+                // 索引信息
+                JObject notifyInfo = new JObject();
+                notifyInfo.Add("blockindex", blockindex);
+                notifyInfo.Add("txid", blockindex);
+                notifyInfo.Add("n", n);
+                notifyInfo.Add("vmstate", vmstate);
+                notifyInfo.Add("contractHash", contractHash);
+
+                // 存储解析数据
+                int i = 0;
+                foreach (JObject jv in JAstate)
+                {
+                    string type = jv["type"].ToString();
+                    if (type == "Array")
+                    {
+                        // Array
+                        JArray value = (JArray)jv["value"];
+                        int j = 0;
+                        foreach (JObject jvv in value)
+                        {
+                            string typeLevel2 = jvv["type"].ToString();
+                            string valueLevel2 = jvv["value"].ToString();
+                            JObject taskEscape = (JObject)notifyStruct[i]["arrayData"][j];
+                            string taskName = taskEscape["name"].ToString();
+                            string taskValue = escapeHelper.contractDataEscap(typeLevel2, valueLevel2, taskEscape);
+                            try
+                            {
+                                notifyInfo.Add(taskName, taskValue);
+                            }
+                            catch
+                            {// txid重名
+                                notifyInfo.Add("_" + taskName, taskValue);
+                            }
+                            ++j;
+                        }
+                    }
+                    else
+                    {
+                        // ByteArray + other
+                        string value = jv["value"].ToString();
+                        JObject taskEscape = (JObject)notifyStruct[i];
+                        string taskName = taskEscape["name"].ToString();
+                        string taskValue = escapeHelper.contractDataEscap(type, value, taskEscape);
+                        try
+                        {
+                            notifyInfo.Add(taskName, taskValue);
+                        }
+                        catch
+                        {// txid重名
+                            notifyInfo.Add("_" + taskName, taskValue);
+                        }
+                    }
+                    ++i;
+                }
+                // 原始state数据
+                notifyInfo.Add("state", notification["state"]);
+
+                // 单条入库或者批量入库，这里采用批量入库方式
+                notifyInfoArr.Add(notifyInfo);
             }
-            return long.Parse(res[0]["lastBlockindex"].ToString());
+            return notifyInfoArr;
         }
-        private long GetRemoteHeight(string key)
+        
+        private void updateLocalRecord(long height)
         {
-            JArray res = mh.GetData(remoteConn.connStr, remoteConn.connDB, "system_counter", new JObject() { { "counter", key } }.ToString());
+            string findStr = new JObject() { { "counter", "notify" } }.ToString();
+            string newData = new JObject() { { "counter", "notify" }, { "lastBlockindex", height } }.ToString();
+            long count = mh.GetDataCount(localConn.connStr, localConn.connDB, contractCounterColl, findStr);
+            if (count <= 0)
+            {
+                mh.PutData(localConn.connStr, localConn.connDB, contractCounterColl, newData);
+            }
+            else
+            {
+                mh.ReplaceData(localConn.connStr, localConn.connDB, contractCounterColl, newData, findStr);
+            }
+        }
+        private long getLocalHeight()
+        {
+            string findStr = new JObject() { { "counter", "notify" } }.ToString();
+            JArray res = mh.GetData(localConn.connStr, localConn.connDB, contractCounterColl, findStr);
             if (res == null || res.Count == 0)
             {
                 return 0;
             }
             return long.Parse(res[0]["lastBlockindex"].ToString());
-
         }
-        private JArray GetRemoteData(string contractHash, string displayName, long startIndex, long endIndex)
+        private long getRemoteHeight()
         {
-            JObject filter = new JObject();
-            filter.Add("notifications.contract", contractHash);
-            filter.Add("notifications.state.value.value", Helper.BytesToHexString(Encoding.UTF8.GetBytes(displayName)));
-            filter.Add("blockindex", new JObject() { { "$gte", startIndex },{ "$lte", endIndex  } });
-            return mh.GetData(remoteConn.connStr, remoteConn.connDB, "notify", filter.ToString());
-        }
-        private void UpdateLocalHeight(string contractHash, string displayName, long blockindex)
-        {
-            string newData = new JObject() { { "contractHash", contractHash }, { "displayName", displayName }, {"lastBlockindex", blockindex } }.ToString();
-            string findStr = new JObject() { { "contractHash", contractHash }, { "displayName", displayName } }.ToString();
-            JArray res = mh.GetData(localConn.connStr, localConn.connDB, "contractStorageHeight", findStr);
-            if(res == null || res.Count == 0)
+            string findStr = new JObject() { { "counter", "notify" } }.ToString();
+            JArray res = mh.GetData(remoteConn.connStr, remoteConn.connDB, notifyCounterColl, findStr);
+            if (res == null || res.Count == 0)
             {
-
-                mh.PutData(localConn.connStr, localConn.connDB, "contractStorageHeight", newData);
-            } else
-            {
-                if(long.Parse(res[0]["lastBlockindex"].ToString()) < blockindex)
-                {
-                    mh.ReplaceData(localConn.connStr, localConn.connDB, "contractStorageHeight", newData, findStr);
-                }
+                return 0;
             }
-
-            // 更新高度
-            //string findStr = new JObject() { { "contractHash", taskContractHash }, { "displayName", taskNotifyDisplayName } }.ToString();
-            //string updateStr = new JObject() { { "$set", new JObject() { { "contractHash", taskContractHash }, { "displayName", taskNotifyDisplayName }, { "lastBlockindex", blockindex } } } }.ToString();
-            //mh.UpdateData(localConn.connStr, localConn.connDB, "contractStorageHeight", updateStr, findStr);
+            return long.Parse(res[0]["lastBlockindex"].ToString());
         }
-        
-
-        private void log(long localHeight, long remoteHeight, string contractHash, string displayName)
+        private JArray GetRemoteData(long startIndex, long endIndex)
         {
-            Console.WriteLine(DateTime.Now + string.Format(" {0}.{1}.{2} processed at {3}/{4}", name(), contractHash, displayName, localHeight, remoteHeight));
+            string findStr = new JObject() { { "blockindex", new JObject() { { "$gt", startIndex }, { "$lte", endIndex } } } }.ToString();
+            return mh.GetData(remoteConn.connStr, remoteConn.connDB, notifyColl, findStr);
         }
+
+        private void log(long localHeight, long remoteHeight)
+        {
+            Console.WriteLine(DateTime.Now + string.Format(" {0}.self processed at {1}/{2}", name(), localHeight, remoteHeight));
+        }
+        private void ping()
+        {
+            LogHelper.ping(batchInterval, name());
+        }
+
     }
 }

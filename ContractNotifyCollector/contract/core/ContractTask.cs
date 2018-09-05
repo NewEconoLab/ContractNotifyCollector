@@ -1,4 +1,5 @@
-﻿using ContractNotifyCollector.helper;
+﻿using ContractNotifyCollector.contract.core;
+using ContractNotifyCollector.helper;
 using Newtonsoft.Json.Linq;
 using System;
 
@@ -12,7 +13,7 @@ namespace ContractNotifyCollector.core
     /// </para>
     /// 
     /// </summary>
-    abstract class ContractTask : IContractTask, ITask
+    abstract class ContractTask : IContractTask, ITask, INetType
     {
         /* 任务名称 */
         private string taskname;
@@ -31,7 +32,19 @@ namespace ContractNotifyCollector.core
         /// 
         /// </summary>
         /// <param name="config"></param>
-        public abstract void Init(JObject config);
+        public void Init(JObject config)
+        {
+            startNetType = config["startNetType"].ToString();
+            try
+            {
+                initConfig(config);
+                LogHelper.printLog("InitTask success:" + name() + "_" + networkType());
+            } catch(Exception ex)
+            {
+                LogHelper.printLog("InitTask failed:" + name() + "_" + networkType() + ",exMsg:" + ex.Message);
+            }
+        }
+        public abstract void initConfig(JObject config);
 
         /// <summary>
         /// 启动任务
@@ -50,5 +63,12 @@ namespace ContractNotifyCollector.core
             }
         }
         public abstract void startTask();
+
+        /*启动网络类型*/
+        private string startNetType;
+        public string networkType()
+        {
+            return startNetType;
+        }
     }
 }

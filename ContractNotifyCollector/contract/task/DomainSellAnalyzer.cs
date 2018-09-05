@@ -1,6 +1,5 @@
 ﻿using ContractNotifyCollector.core.dao;
 using ContractNotifyCollector.helper;
-using MongoDB.Bson;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -17,7 +16,7 @@ namespace ContractNotifyCollector.core.task
         {
         }
 
-        public override void Init(JObject config)
+        public override void initConfig(JObject config)
         {
             this.config = config;
             initConfig();
@@ -41,14 +40,12 @@ namespace ContractNotifyCollector.core.task
         private int batchInterval { set; get; }
         private string bonusAddress { get; set; }
         private string bonusAddressColl { get; set; }
+        private bool initSuccFlag = false;
         private void initConfig()
         {
-            localDbConnInfo = Config.localDbConnInfo;
-            remoteDbConnInfo = Config.remoteDbConnInfo;
-            blockDbConnInfo = Config.blockDbConnInfo;
+            //JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name()).ToArray()[0]["taskInfo"];
+            JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name() && p["taskNet"].ToString() == networkType()).ToArray()[0]["taskInfo"];
             
-            JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name()).ToArray()[0]["taskInfo"];
-
             auctionRecordColl = cfg["auctionRecordColl"].ToString();
             auctionStateColl = cfg["auctionStateColl"].ToString();
             notifyRecordColl = cfg["notifyRecordColl"].ToString();
@@ -57,22 +54,28 @@ namespace ContractNotifyCollector.core.task
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
             bonusAddress = cfg["bonusAddress"].ToString();
+
+            // db info
+            localDbConnInfo = Config.localDbConnInfo;
+            remoteDbConnInfo = Config.remoteDbConnInfo;
+            blockDbConnInfo = Config.blockDbConnInfo;
+            //
+            initSuccFlag = true;
         }
 
         private void run()
         {
-            clearCurAddprice();
+            if (!initSuccFlag) return;
+            //clearCurAddprice();
             while (true)
             {
                 ping();
-                
+
                 // 获取远程已同步高度
-                JObject filter = new JObject() { { "contractHash", notifyDomainSellColl } };
-                long remoteHeight = getContractHeight(remoteDbConnInfo, notifyRecordColl, filter.ToString());
+                long remoteHeight = getRemoteHeight();
 
                 // 获取本地已处理高度
-                filter = new JObject() { { "contractColl", notifyDomainSellColl } };
-                long localHeight = getContractHeight(localDbConnInfo, auctionRecordColl, filter.ToString());
+                long localHeight = getLocalHeight();
 
                 // 
                 if (remoteHeight <= localHeight)
@@ -88,9 +91,8 @@ namespace ContractNotifyCollector.core.task
                     long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
                     // 待处理数据
                     JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gt", index },{ "$lte", endIndex } } } };
-                    JObject querySortBy = new JObject() { { "blockindex", 1 } };
                     JObject queryField = new JObject() { { "state", 0 } };
-                    JArray queryRes = GetDataPagesWithField(remoteDbConnInfo, notifyDomainSellColl, queryField.ToString(), querySortBy.ToString(), queryFilter.ToString());
+                    JArray queryRes = getDataWithField(remoteDbConnInfo, notifyDomainSellColl, queryField.ToString(), queryFilter.ToString());
                     if (queryRes == null || queryRes.Count() == 0)
                     {
                         updateDomainRecord(endIndex);
@@ -106,13 +108,11 @@ namespace ContractNotifyCollector.core.task
                     {
                         blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["startBlockSelling"].ToString())).ToArray()).ToArray();
                     }
-                    //blockindexArrs = blockindexArrs.Concat(queryRes.Select(item => long.Parse(item["startBlockSelling"].ToString())).ToArray()).ToArray();
                     tmp = queryRes.Where(item => item["endBlock"] != null && item["endBlock"].ToString() != "").ToArray();
                     if(tmp != null && tmp.Count() > 0)
                     {
                         blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["endBlock"].ToString())).ToArray()).ToArray();
                     }
-                    //blockindexArrs = blockindexArrs.Concat(queryRes.Select(item => long.Parse(item["endBlock"].ToString())).ToArray()).ToArray();
                     tmp = queryRes.Where(item => item["lastBlock"] != null && item["lastBlock"].ToString() != "").ToArray();
                     if (tmp != null && tmp.Count() > 0)
                     {
@@ -166,16 +166,10 @@ namespace ContractNotifyCollector.core.task
                         log(blockindex, remoteHeight);
                     }
 
-                    
-
-
-
                 }
             }
         }
-
-        private const long THREE_DAY_SECONDS = 3* (1 * /*24 * 60 * */60 /*测试时5分钟一天*/* 5);
-        private const long ONE_YEAR_SECONDS = 365* (1 * /*24 * 60 * */60 /*测试时5分钟一天*/* 5);
+        
         private void updateR1(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
         {// startAuction
 
@@ -214,8 +208,15 @@ namespace ContractNotifyCollector.core.task
                         },
                         auctionState = AuctionState.STATE_CONFIRM,
                         maxPrice = 0,
-                        ttl = time + ONE_YEAR_SECONDS,
+                        ttl = time + TimeConst.ONE_YEAR_SECONDS,
 
+                        // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
+                        lastTime = new AuctionTime
+                        {
+                            blockindex = blockindex,
+                            blocktime = blockindex == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
+                            txid = blockindex == 0 ? "" : txid
+                        }
                     };
                     insertAuctionTx(at);
                 }
@@ -240,7 +241,7 @@ namespace ContractNotifyCollector.core.task
                     };
                     at.auctionState = AuctionState.STATE_CONFIRM;
                     at.maxPrice = 0;
-                    at.ttl = time + ONE_YEAR_SECONDS;
+                    at.ttl = time + TimeConst.ONE_YEAR_SECONDS;
                     replaceAuctionTx(at, auctionId);
                 }
 
@@ -283,16 +284,9 @@ namespace ContractNotifyCollector.core.task
                         txid = txid
                     };
                 }
-               
+                
                 at.maxPrice = maxPrice;
                 at.maxBuyer = maxBuyer;
-                // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
-                at.lastTime = new AuctionTime
-                {
-                    blockindex = blockindex,
-                    blocktime = blockindex == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
-                    txid = blockindex == 0 ? "" : txid
-                };
                 replaceAuctionTx(at, auctionId);
                
             }
@@ -308,9 +302,9 @@ namespace ContractNotifyCollector.core.task
 
                 decimal value = decimal.Parse(jt["value"].ToString());
                 string txid = jt["txid"].ToString();
-                //if(txid == "0x8c86ce79a0074d8ca9e0a7f78f8d5326ca8ab6fadf86569094c9ca4ebca16037")
+                if(txid == "0xc97606fd0db030369a9848ef7c19543f66aad752bb70984b94f165c69b6301ca")
                 {
-                   // throw new Exception("TTT");
+                   //throw new Exception("TTT");
                 }
                 
                 bool auctionidIsTo = true;
@@ -351,6 +345,7 @@ namespace ContractNotifyCollector.core.task
                     addwho = addwhoArr[0];
                     at.addwholist.Remove(addwho);
                     //addwho.totalValue = auctionidIsTo ? addwho.totalValue + value : addwho.totalValue - value;
+                    if (addwho.addpricelist != null && addwho.addpricelist.Any(p => p != null && p.time.txid == txid && p.value == value)) continue;
                 } else
                 {
                     addwho = new AuctionAddWho();
@@ -591,15 +586,25 @@ namespace ContractNotifyCollector.core.task
                 replaceData(localDbConnInfo, auctionRecordColl, new JObject() { { "contractColl", notifyDomainSellColl }, { "lastBlockindex", blockindex } }.ToString(), new JObject() { { "contractColl", notifyDomainSellColl } }.ToString());
             }
         }
-        private long getContractHeight(DbConnInfo db, string coll, string filter)
+        private long getRemoteHeight()
         {
-            JArray res = getData(db, coll, filter);
-            if (res != null && res.Count > 0)
+            string findstr = new JObject() { { "counter", "notify" } }.ToString();
+            JArray res = getData(remoteDbConnInfo, notifyRecordColl, findstr);
+            if (res == null || res.Count == 0)
             {
-                //return long.Parse(Convert.ToString(res.OrderByDescending(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
-                return long.Parse(Convert.ToString(res.OrderBy(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
+                return 0;
             }
-            return -1;
+            return long.Parse(Convert.ToString(res.OrderBy(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
+        }
+        private long getLocalHeight()
+        {
+            string findstr = new JObject() { { "contractColl", notifyDomainSellColl } }.ToString();
+            JArray res = getData(localDbConnInfo, auctionRecordColl, findstr);
+            if (res == null || res.Count == 0)
+            {
+                return 0;
+            }
+            return long.Parse(Convert.ToString(res.OrderBy(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
         }
         private JArray getData(DbConnInfo db, string coll, string filter)
         {
@@ -625,11 +630,7 @@ namespace ContractNotifyCollector.core.task
         {
             return mh.GetDataWithField(db.connStr, db.connDB, coll, fieldBson, findBson);
         }
-        private JArray GetDataPagesWithField(DbConnInfo db, string coll, string fieldBson, string sortBson, string findBson)
-        {
-            return mh.GetDataPagesWithField(db.connStr, db.connDB, coll, fieldBson, 0, 0, sortBson, findBson);
-        }
-
+       
         private long getDataCount(DbConnInfo db, string coll, string filter)
         {
             return mh.GetDataCount(db.connStr, db.connDB, coll, filter);

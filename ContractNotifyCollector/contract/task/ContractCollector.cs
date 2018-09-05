@@ -22,7 +22,7 @@ namespace ContractNotifyCollector.core.task
         public ContractCollector(string name) : base(name)
         {
         }
-        public override void Init(JObject config)
+        public override void initConfig(JObject config)
         {
             this.config = config;
             init();

@@ -10,6 +10,7 @@ namespace ContractNotifyCollector.helper
     /// </summary>
     class LogHelper
     {
+        private static string logfile = "error.log";
         public static void printEx(Exception ex) 
         {
             string threadName = Thread.CurrentThread.Name;
@@ -24,7 +25,7 @@ namespace ContractNotifyCollector.helper
         
         private static void PrintEx2File(string threadName, Exception ex)
         {
-            using (FileStream fs = new FileStream("error.log", FileMode.Append, FileAccess.Write, FileShare.None))
+            using (FileStream fs = new FileStream(logfile, FileMode.Append, FileAccess.Write, FileShare.None))
             using (StreamWriter w = new StreamWriter(fs))
             {
                 PrintErrorLogs(w, threadName, ex);
@@ -53,19 +54,27 @@ namespace ContractNotifyCollector.helper
         }
         public static void printHeader(string[] ss)
         {
-            string logfile = "error.log";
             if (File.Exists(logfile))
             {
                 new FileInfo(logfile).MoveTo(logfile+"_bak"+DateTime.Now.ToFileTimeUtc());
             }
             using (FileStream fs = new FileStream(logfile, FileMode.Create, FileAccess.Write, FileShare.None))
-            using (StreamWriter w = new StreamWriter(fs))
+            using (StreamWriter sw = new StreamWriter(fs))
             {
                 string nowtime = DateTime.Now.ToString() + " [" + "main" + "]";
                 foreach(string s in ss)
                 {
-                    w.WriteLine(nowtime + " " + s);
+                    sw.WriteLine(nowtime + " " + s);
                 }
+            }
+        }
+        public static void printLog(string ss)
+        {
+            Console.WriteLine(DateTime.Now + " " + ss);
+            using (FileStream fs = new FileStream(logfile, FileMode.Append, FileAccess.Write, FileShare.None))
+            using (StreamWriter sw = new StreamWriter(fs))
+            {
+                sw.WriteLine(DateTime.Now + " " + ss);
             }
         }
 

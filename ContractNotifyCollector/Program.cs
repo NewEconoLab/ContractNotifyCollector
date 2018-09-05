@@ -21,7 +21,7 @@ namespace ContractNotifyCollector
         private static void InitTask()
         {
             Config.loadConfig("config.json");
-            //AddTask(new ContractNotify("ContractNotify"));
+            AddTask(new ContractNotify("ContractNotify"));
             //AddTask(new ContractCollector("ContractCollector"));
             AddTask(new DomainCenterAnalyzer("DomainCenterAnalyzer"));
             AddTask(new DomainSellAnalyzer("DomainSellAnalyzer"));
@@ -36,11 +36,13 @@ namespace ContractNotifyCollector
         {
             foreach (var func in list)
             {
+                func.Init(Config.getConfig());
+            }
+            foreach (var func in list)
+            {
                 new Task(() => {
-                    func.Init(Config.getConfig());
                     func.Start();
                 }).Start();
-                
             }
         }
 
