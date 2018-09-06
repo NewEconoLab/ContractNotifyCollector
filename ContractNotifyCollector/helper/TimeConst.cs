@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -17,6 +18,23 @@ namespace ContractNotifyCollector.helper
         {
             return new TimeSetter(test == "test" ? ONE_DAY_SECONDS_Test : ONE_DAY_SECONDS);
         }
+
+        private static Dictionary<string, TimeSetter> OneDaySecondsDict =
+            new Dictionary<string, TimeSetter>() {
+                { ".test", new TimeSetter(300) },      //.test
+                { ".neo", new TimeSetter(86400) },     //.neo
+                { ".all", new TimeSetter(86400) },
+            };
+
+        public static TimeSetter getTimeSetter(string root)
+        {
+            if (OneDaySecondsDict.ContainsKey(root))
+            {
+                return OneDaySecondsDict.GetValueOrDefault(root);
+            }
+            return OneDaySecondsDict.GetValueOrDefault(".all");
+        }
+
     }
     class TimeSetter
     {
@@ -34,5 +52,12 @@ namespace ContractNotifyCollector.helper
             FIVE_DAY_SECONDS = ONE_DAY_SECONDS * 5;
             ONE_YEAR_SECONDS = ONE_DAY_SECONDS * 365;
         }
+    }
+
+
+    class RootType
+    {
+        public const string TEST = ".test";
+        public const string NEO = ".neo";
     }
 }

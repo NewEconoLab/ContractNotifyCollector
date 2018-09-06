@@ -35,8 +35,10 @@ namespace ContractNotifyCollector.core.task
         private string auctionStateColl;
         private int batchSize;
         private int batchInterval;
+        private string root; 
         private TimeSetter timeSetter;
         private DbConnInfo localDbConnInfo;
+
         private bool initSuccFlag = false;
 
         private void initConfig()
@@ -47,10 +49,10 @@ namespace ContractNotifyCollector.core.task
             auctionStateColl = cfg["auctionStateColl"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
-            timeSetter = TimeConst.getTimeConst(cfg["testFlag"] == null ? "": cfg["testFlag"].ToString());
+            root = cfg["root"].ToString();
+            timeSetter = TimeConst.getTimeSetter(root);
             // db info
             localDbConnInfo = Config.localDbConnInfo;
-
             //
             initSuccFlag = true;
         }
@@ -88,6 +90,7 @@ namespace ContractNotifyCollector.core.task
             }
             foreach (AuctionTx jo in list)
             {
+                if (root != "all" && !jo.fulldomain.EndsWith(root)) continue;
                 long starttime = jo.startTime.blocktime;
                 string oldState = jo.auctionState;
                 string newState = null;

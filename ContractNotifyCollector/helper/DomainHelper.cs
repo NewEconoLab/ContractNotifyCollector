@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Text;
 using System.Linq;
+using System.Security.Cryptography;
 
 namespace ContractNotifyCollector.helper
 {
@@ -10,10 +11,10 @@ namespace ContractNotifyCollector.helper
     /// </summary>
     public class DomainHelper
     {
-        public static readonly System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create();
 
         public static Hash256 nameHash(string domain)
         {
+            SHA256 sha256 = SHA256.Create();
             byte[] data = Encoding.UTF8.GetBytes(domain);
             return new Hash256(sha256.ComputeHash(data));
         }
@@ -22,7 +23,7 @@ namespace ContractNotifyCollector.helper
             var bs = Encoding.UTF8.GetBytes(subdomain);
             if (bs.Length == 0)
                 return roothash;
-
+            SHA256 sha256 = SHA256.Create();
             var domain = sha256.ComputeHash(bs).Concat(roothash).ToArray();
             return new Hash256(sha256.ComputeHash(domain));
         }

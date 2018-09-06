@@ -31,11 +31,11 @@ namespace ContractNotifyCollector.core.task
         private DbConnInfo localDbConnInfo;
         private DbConnInfo remoteDbConnInfo;
         private DbConnInfo blockDbConnInfo;
-        private string auctionRecordColl { set; get; }
-        private string auctionStateColl { set; get; }
-        private string notifyRecordColl { set; get; }
-        private string notifyDomainSellColl { set; get; }
-        private string notifyDomainCenterColl { set; get; }
+        private string auctionRecordColl;
+        private string auctionStateColl;
+        private string notifyRecordColl;
+        private string notifyDomainSellColl;
+        private string notifyDomainCenterColl;
         private int batchSize { set; get; }
         private int batchInterval { set; get; }
         private string bonusAddress { get; set; }
