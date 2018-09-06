@@ -25,7 +25,9 @@ namespace ContractNotifyCollector
             //AddTask(new ContractCollector("ContractCollector"));
             AddTask(new DomainCenterAnalyzer("DomainCenterAnalyzer"));
             AddTask(new DomainSellAnalyzer("DomainSellAnalyzer"));
+            AddTask(new DomainSellAnalyzer("DomainSellAnalyzerTest"));
             AddTask(new AuctionStateUpdateTask("AuctionStateUpdateTask"));
+            AddTask(new AuctionStateUpdateTask("AuctionStateUpdateTaskTest"));
         }
 
         /// <summary>

@@ -35,6 +35,7 @@ namespace ContractNotifyCollector.core.task
         private string auctionStateColl;
         private int batchSize;
         private int batchInterval;
+        private TimeSetter timeSetter;
         private DbConnInfo localDbConnInfo;
         private bool initSuccFlag = false;
 
@@ -46,6 +47,7 @@ namespace ContractNotifyCollector.core.task
             auctionStateColl = cfg["auctionStateColl"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
+            timeSetter = TimeConst.getTimeConst(cfg["testFlag"] == null ? "": cfg["testFlag"].ToString());
             // db info
             localDbConnInfo = Config.localDbConnInfo;
 
@@ -75,8 +77,8 @@ namespace ContractNotifyCollector.core.task
         {
             //string filter = MongoFieldHelper.toFilter(new string[] { AuctionState.STATE_START, AuctionState.STATE_CONFIRM, AuctionState.STATE_RANDOM }, auctionStateColl).ToString();
             long nowtime = TimeHelper.GetTimeStamp();
-            JObject FiveDayFilter = MongoFieldHelper.toFilter(new string[] { AuctionState.STATE_START, AuctionState.STATE_CONFIRM, AuctionState.STATE_RANDOM }, auctionStateColl);
-            JObject OneYearFilter = new JObject() { { "auctionState", AuctionState.STATE_END }, { "startTime.blocktime", new JObject() { { "$lt", nowtime - TimeConst.ONE_YEAR_SECONDS } } } };
+            JObject FiveDayFilter = MongoFieldHelper.toFilter(new string[] { AuctionState.STATE_START, AuctionState.STATE_CONFIRM, AuctionState.STATE_RANDOM }, "auctionState");
+            JObject OneYearFilter = new JObject() { { "auctionState", AuctionState.STATE_END }, { "startTime.blocktime", new JObject() { { "$lt", nowtime - timeSetter.ONE_YEAR_SECONDS } } } };
             string filter = new JObject() { { "$or", new JArray() { FiveDayFilter, OneYearFilter } } }.ToString();
             List<AuctionTx> list = mh.GetData<AuctionTx>(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, filter);
             if (list == null || list.Count == 0)
@@ -111,7 +113,7 @@ namespace ContractNotifyCollector.core.task
                     *          e. (3,5)结束时间无值且最后出价在开拍后两天内，则结束
                     *          f. (3,5)其余为随机
                     */
-                if (nowtime - starttime <= TimeConst.THREE_DAY_SECONDS)
+                if (nowtime - starttime <= timeSetter.THREE_DAY_SECONDS)
                 {
                     // 小于三天
                     newState = AuctionState.STATE_CONFIRM;
@@ -124,23 +126,23 @@ namespace ContractNotifyCollector.core.task
                         // (3,5)结束时间无值且前三天无人出价，则流拍
                         newState = AuctionState.STATE_ABORT;
                     }
-                    else if (nowtime > starttime + TimeConst.ONE_YEAR_SECONDS)
+                    else if (nowtime > starttime + timeSetter.ONE_YEAR_SECONDS)
                     {
                         // 超过1Y，则过期
                         newState = AuctionState.STATE_EXPIRED;
                     }
-                    else if (nowtime >= starttime + TimeConst.FIVE_DAY_SECONDS)
+                    else if (nowtime >= starttime + timeSetter.FIVE_DAY_SECONDS)
                     {
                         // 超过5D，则结束
                         newState = AuctionState.STATE_END;
-                        endTimeBlocktime = starttime + TimeConst.FIVE_DAY_SECONDS;
+                        endTimeBlocktime = starttime + timeSetter.FIVE_DAY_SECONDS;
                     }
                     else if (jo.endTime != null && jo.endTime.blocktime > starttime)
                     {
                         // (3,5)结束时间有值，且大于开拍时间，则结束
                         newState = AuctionState.STATE_END;
                     }
-                    else if (jo.lastTime.blocktime <= starttime + TimeConst.TWO_DAY_SECONDS)
+                    else if (jo.lastTime.blocktime <= starttime + timeSetter.TWO_DAY_SECONDS)
                     {
                         // (3,5)结束时间无值且最后出价在开拍后两天内，则超时3D结束
                         newState = AuctionState.STATE_END;
