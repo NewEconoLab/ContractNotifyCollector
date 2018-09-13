@@ -124,7 +124,7 @@ namespace ContractNotifyCollector.core.task
                 else
                 {
                     // 大于三天
-                    if (jo.lastTime == null || jo.lastTime.blockindex == 0)
+                    if (jo.lastTime == null || jo.lastTime.blockindex == 0 || jo.addwholist == null || jo.addwholist.Count == 0)
                     {
                         // (3,5)结束时间无值且前三天无人出价，则流拍
                         newState = AuctionState.STATE_ABORT;

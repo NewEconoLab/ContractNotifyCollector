@@ -67,6 +67,7 @@ namespace ContractNotifyCollector.core.task
         {
             if (!initSuccFlag) return;
             //clearCurAddprice();
+            bool hasCreateIndex = false;
             while (true)
             {
                 ping();
@@ -76,7 +77,7 @@ namespace ContractNotifyCollector.core.task
 
                 // 获取本地已处理高度
                 long localHeight = getLocalHeight();
-
+                
                 // 
                 if (remoteHeight <= localHeight)
                 {
@@ -167,6 +168,13 @@ namespace ContractNotifyCollector.core.task
                     }
 
                 }
+
+                // 
+                if (hasCreateIndex) continue;
+                mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'auctionId':1}", "i_auctionId");
+                mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'auctionState':1}", "i_auctionState");
+                mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'addwholist.address':1}", "i_addwholist_address");
+                hasCreateIndex = true;
             }
         }
         
@@ -208,7 +216,7 @@ namespace ContractNotifyCollector.core.task
                         },
                         auctionState = AuctionState.STATE_CONFIRM,
                         maxPrice = 0,
-                        ttl = time + TimeConst.ONE_YEAR_SECONDS,
+                        ttl = time + TimeConst.getTimeSetter("."+phDict.GetValueOrDefault(parenthash)).ONE_DAY_SECONDS,
 
                         // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
                         lastTime = new AuctionTime
@@ -241,7 +249,7 @@ namespace ContractNotifyCollector.core.task
                     };
                     at.auctionState = AuctionState.STATE_CONFIRM;
                     at.maxPrice = 0;
-                    at.ttl = time + TimeConst.ONE_YEAR_SECONDS;
+                    at.ttl = time + TimeConst.getTimeSetter("." + phDict.GetValueOrDefault(parenthash)).ONE_YEAR_SECONDS;
                     replaceAuctionTx(at, auctionId);
                 }
 
@@ -576,14 +584,15 @@ namespace ContractNotifyCollector.core.task
        
         private void updateDomainRecord(long blockindex)
         {
-            long count = getDataCount(localDbConnInfo, auctionRecordColl, new JObject() { { "contractColl", notifyDomainSellColl } }.ToString());
+            string newdata = new JObject() { { "contractColl", notifyDomainSellColl }, { "lastBlockindex", blockindex } }.ToString();
+            string findstr = new JObject() { { "contractColl", notifyDomainSellColl } }.ToString();
+            long count = getDataCount(localDbConnInfo, auctionRecordColl, findstr);
             if (count <= 0)
             {
-                putData(localDbConnInfo, auctionRecordColl, new JObject() { { "contractColl", notifyDomainSellColl }, { "lastBlockindex", blockindex } }.ToString());
-            }
-            else
+                putData(localDbConnInfo, auctionRecordColl, newdata);
+            } else
             {
-                replaceData(localDbConnInfo, auctionRecordColl, new JObject() { { "contractColl", notifyDomainSellColl }, { "lastBlockindex", blockindex } }.ToString(), new JObject() { { "contractColl", notifyDomainSellColl } }.ToString());
+                replaceData(localDbConnInfo, auctionRecordColl, newdata, findstr);
             }
         }
         private long getRemoteHeight()

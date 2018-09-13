@@ -204,6 +204,7 @@ namespace ContractNotifyCollector.core.task
                             long count = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, new JObject() { { "blockindex", blockindex } }.ToString());
                             if(count <= 0)
                             {
+                                mh.setIndex(localConn.connStr, localConn.connDB, contractHash, "{'blockindex':1,'txid':1,'n':1}", "i_blockindex_txid_n");
                                 mh.PutData(localConn.connStr, localConn.connDB, contractHash, new JArray() { g });
                             }
                             return new JArray();

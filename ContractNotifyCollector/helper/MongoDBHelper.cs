@@ -2,7 +2,9 @@
 using MongoDB.Bson.IO;
 using MongoDB.Driver;
 using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ContractNotifyCollector.helper
 {
@@ -211,5 +213,47 @@ namespace ContractNotifyCollector.helper
             }
             else { return new JArray(); }
         }
+
+        public void DeleteData(string mongodbConnStr, string mongodbDatabase, string coll, string deleteBson)
+        {
+            var client = new MongoClient(mongodbConnStr);
+            var database = client.GetDatabase(mongodbDatabase);
+            var collection = database.GetCollection<BsonDocument>(coll);
+
+            collection.DeleteOne(BsonDocument.Parse(deleteBson));
+            client = null;
+
+        }
+
+        public void setIndex(string mongodbConnStr, string mongodbDatabase, string coll, string indexDefinition, string indexName, bool isUnique = false)
+        {
+            var client = new MongoClient(mongodbConnStr);
+            var database = client.GetDatabase(mongodbDatabase);
+            var collection = database.GetCollection<BsonDocument>(coll);
+
+            //检查是否已有设置idnex
+            bool isSet = false;
+            using (var cursor = collection.Indexes.List())
+            {
+                JArray JAindexs = JArray.Parse(cursor.ToList().ToJson());
+                var query = JAindexs.Children().Where(index => (string)index["name"] == indexName);
+                if (query.Count() > 0) isSet = true;
+                // do something with the list...
+            }
+
+            if (!isSet)
+            {
+                try
+                {
+                    var options = new CreateIndexOptions { Name = indexName, Unique = isUnique };
+                    collection.Indexes.CreateOne(indexDefinition, options);
+                }
+                catch { }
+            }
+
+            client = null;
+        }
+
+        
     }
 }
