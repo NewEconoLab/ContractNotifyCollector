@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using ContractNotifyCollector.contract.task;
 using ContractNotifyCollector.core;
 using ContractNotifyCollector.core.task;
 using ContractNotifyCollector.helper;
@@ -21,6 +22,8 @@ namespace ContractNotifyCollector
         private static void InitTask()
         {
             Config.loadConfig("config.json");
+
+            
             AddTask(new ContractNotify("ContractNotify"));
             //AddTask(new ContractCollector("ContractCollector"));
             AddTask(new DomainCenterAnalyzer("DomainCenterAnalyzer"));
@@ -28,6 +31,7 @@ namespace ContractNotifyCollector
             AddTask(new DomainSellAnalyzer("DomainSellAnalyzerTest"));
             AddTask(new AuctionStateUpdateTask("AuctionStateUpdateTask"));
             AddTask(new AuctionStateUpdateTask("AuctionStateUpdateTaskTest"));
+            AddTask(new CGasUtxoTask("CGasUtxoTask"));
         }
 
         /// <summary>
