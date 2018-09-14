@@ -117,6 +117,7 @@ namespace ContractNotifyCollector.contract.task
                                     {"value", jt["value"] },
                                     {"createHeight", jt["createHeight"] },
                                     {"markAddress", "0" },
+                                    {"markTime", 0 },
                                 }.ToString();
                                 mh.PutData(localConn.connStr, localConn.connDB, cgasUtxoCol, newData);
 
@@ -143,11 +144,12 @@ namespace ContractNotifyCollector.contract.task
         private void updateState()
         {
             long remoteHeight = getRemoteHeight();
+            long nowtime = TimeHelper.GetTimeStamp();
             string findstr = new JObject()
             {
                 {"addr", cgasAddress },
                 {"markAddress", new JObject(){ {"$ne","0" } } },
-                {"createHeight", new JObject(){ {"$lt",remoteHeight- expireRange } } },
+                {"markTime", new JObject(){ {"$lt", nowtime - expireRange } } },
             }.ToString();
             JArray res = mh.GetData(localConn.connStr, localConn.connDB, cgasUtxoCol, findstr);
             if (res == null || res.Count == 0) return;
@@ -156,6 +158,8 @@ namespace ContractNotifyCollector.contract.task
                 JObject newJo = (JObject)jo.DeepClone();
                 newJo.Remove("markAddress");
                 newJo.Add("markAddress", "0");
+                newJo.Remove("markTime");
+                newJo.Add("markTime", 0);
                 mh.ReplaceData(localConn.connStr, localConn.connDB, cgasUtxoCol, newJo.ToString(), jo.ToString());
             }
         }
