@@ -202,12 +202,12 @@ namespace ContractNotifyCollector.core.task
                         parenthash = parenthash,
                         fulldomain = domain + "." + phDict.GetValueOrDefault(parenthash),
                         startAddress = who,
-                        startTime = new AuctionTime
+                        /*startTime = new AuctionTime
                         {
                             blockindex = blockindex,
                             blocktime = time,
                             txid = txid
-                        },
+                        },*/
                         endTime = new AuctionTime
                         {
                             blockindex = 0,
@@ -216,15 +216,18 @@ namespace ContractNotifyCollector.core.task
                         },
                         auctionState = AuctionState.STATE_CONFIRM,
                         maxPrice = 0,
-                        ttl = time + TimeConst.getTimeSetter("."+phDict.GetValueOrDefault(parenthash)).ONE_DAY_SECONDS,
+                        //ttl = time + TimeConst.getTimeSetter("." + phDict.GetValueOrDefault(parenthash)).ONE_DAY_SECONDS,
+                        ttl = 0,
 
                         // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
+                        /*
                         lastTime = new AuctionTime
                         {
                             blockindex = blockindex,
-                            blocktime = blockindex == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
+                            blocktime = blockindex == 0 ? 0 : time,
                             txid = blockindex == 0 ? "" : txid
-                        }
+                        }*/
+                        lastTime = null
                     };
                     insertAuctionTx(at);
                 }
@@ -235,12 +238,13 @@ namespace ContractNotifyCollector.core.task
                     at.parenthash = parenthash;
                     at.fulldomain = domain + "." + phDict.GetValueOrDefault(parenthash);
                     at.startAddress = who;
+                    /*
                     at.startTime = new AuctionTime
                     {
                         blockindex = blockindex,
-                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                        blocktime = time,
                         txid = txid
-                    };
+                    };*/
                     at.endTime = new AuctionTime
                     {
                         blockindex = 0,
@@ -249,7 +253,7 @@ namespace ContractNotifyCollector.core.task
                     };
                     at.auctionState = AuctionState.STATE_CONFIRM;
                     at.maxPrice = 0;
-                    at.ttl = time + TimeConst.getTimeSetter("." + phDict.GetValueOrDefault(parenthash)).ONE_YEAR_SECONDS;
+                    //at.ttl = time + TimeConst.getTimeSetter("." + phDict.GetValueOrDefault(parenthash)).ONE_YEAR_SECONDS;
                     replaceAuctionTx(at, auctionId);
                 }
 
@@ -291,6 +295,19 @@ namespace ContractNotifyCollector.core.task
                         blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                         txid = txid
                     };
+                }
+                if(at.startTime == null || at.startTime.blockindex == 0)
+                {
+                    at.startTime = new AuctionTime
+                    {
+                        blockindex = startBlockSelling,
+                        blocktime = blockindexDict.GetValueOrDefault(startBlockSelling + ""),
+                        txid = txid
+                    };
+                }
+                if(at.ttl == 0)
+                {
+                    at.ttl = at.startTime.blocktime + TimeConst.getTimeSetter(at.fulldomain.Substring(at.fulldomain.IndexOf("."))).ONE_YEAR_SECONDS;
                 }
                 
                 at.maxPrice = maxPrice;
