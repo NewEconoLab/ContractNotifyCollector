@@ -220,14 +220,12 @@ namespace ContractNotifyCollector.core.task
                         ttl = 0,
 
                         // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
-                        /*
                         lastTime = new AuctionTime
                         {
                             blockindex = blockindex,
                             blocktime = blockindex == 0 ? 0 : time,
                             txid = blockindex == 0 ? "" : txid
-                        }*/
-                        lastTime = null
+                        }
                     };
                     insertAuctionTx(at);
                 }
