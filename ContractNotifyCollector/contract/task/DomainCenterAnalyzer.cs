@@ -168,6 +168,19 @@ namespace ContractNotifyCollector.core.task
                         if(hasJo["blockindex"].ToString() != jo["blockindex"].ToString() 
                             || hasJo["register"].ToString() != jo["register"].ToString())
                         {
+                            // TODO
+                            if(hasJo["resolver"].ToString() != jo["resolver"].ToString())
+                            {
+                                string findstr = new JObject() { { "namehash", hasJo["namehash"] } }.ToString();
+                                string sortstr = new JObject() { { "blockindex", -1 } }.ToString();
+                                string fieldstr = MongoFieldHelper.toReturn(new string[] { "protocol", "data" }).ToString();
+                                JArray resolveData = mh.GetDataPagesWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainResolverCol, fieldstr, 1, 1, sortstr, findstr);
+                                if(resolveData != null && resolveData.Count() > 0)
+                                {
+                                    jo.Add("protocol", resolveData[0]["protocol"]);
+                                    jo.Add("data", resolveData[0]["data"]);
+                                }
+                            }
                             mh.UpdateData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainOwnerCol, new JObject() { { "$set", jo } }.ToString(), domainOwnerFilter.ToString());
                         }
                     }
