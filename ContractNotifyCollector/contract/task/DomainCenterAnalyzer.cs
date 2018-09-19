@@ -155,8 +155,6 @@ namespace ContractNotifyCollector.core.task
                 g.GroupBy(pp => pp["parenthash"].ToString(), (kk, gg) =>
                 {
                     JObject jo = (JObject)gg.OrderByDescending(ppp => long.Parse(ppp["blockindex"].ToString())).First();
-                    jo.Add("protocol", "");
-                    jo.Add("data", "");
                     string domain = k.ToString();
                     string parenthash = kk.ToString();
                     JObject domainOwnerFilter = new JObject() { { "domain", domain }, { "parenthash", parenthash } };
@@ -175,6 +173,8 @@ namespace ContractNotifyCollector.core.task
                     }
                     else
                     {
+                        jo.Add("protocol", "");
+                        jo.Add("data", "");
                         mh.PutData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainOwnerCol, jo.ToString());
                     }
                     return new JObject();
