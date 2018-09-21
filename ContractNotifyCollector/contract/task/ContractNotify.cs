@@ -116,89 +116,41 @@ namespace ContractNotifyCollector.core.task
                     foreach (long blockindex in blockindexArr)
                     {
                         // 解析
-                        JArray notifyInfoArr = new JArray();
+                        List<JObject> list = new List<JObject>();
                         foreach (JObject jo in res.Where(p => long.Parse(p["blockindex"].ToString()) == blockindex))
                         {
                             string txid = jo["txid"].ToString();
-                            string vmstate = jo["vmstate"].ToString();
-                            // stack...
 
-                            JArray notifications = (JArray)jo["notifications"];
-                            int n = 0;
-                            foreach (JObject notification in notifications)
+                            // 新版解析方式,NEO-CLI Version: 2.9.0.0
+                            if(jo["executions"] != null)
                             {
-                                string contractHash = notification["contract"].ToString();
-                                if (!hasKey(contractHash)) continue;
-                                JArray JAstate = (JArray)notification["state"]["value"];
-                                string displayName = JAstate[0]["value"].ToString().Hexstring2String();
-                                JArray notifyStruct = getVal(contractHash, displayName);
-                                if (notifyStruct == null || notifyStruct.Count == 0) continue;
-                                // 索引信息
-                                JObject notifyInfo = new JObject();
-                                notifyInfo.Add("blockindex", blockindex);
-                                notifyInfo.Add("txid", txid);
-                                notifyInfo.Add("n", n);
-                                notifyInfo.Add("vmstate", vmstate);
-                                notifyInfo.Add("contractHash", contractHash);
-
-                                // 存储解析数据
-                                int i = 0;
-                                foreach (JObject jv in JAstate)
+                                foreach (JObject execution in (JArray)jo["executions"])
                                 {
-                                    string type = jv["type"].ToString();
-                                    if (type == "Array")
-                                    {
-                                        // Array
-                                        JArray value = (JArray)jv["value"];
-                                        int j = 0;
-                                        foreach (JObject jvv in value)
-                                        {
-                                            string typeLevel2 = jvv["type"].ToString();
-                                            string valueLevel2 = jvv["value"].ToString();
-                                            JObject taskEscape = (JObject)notifyStruct[i]["arrayData"][j];
-                                            string taskName = taskEscape["name"].ToString();
-                                            string taskValue = escapeHelper.contractDataEscap(typeLevel2, valueLevel2, taskEscape);
-                                            try
-                                            {
-                                                notifyInfo.Add(taskName, taskValue);
-                                            }
-                                            catch
-                                            {// txid重名
-                                                notifyInfo.Add("_" + taskName, taskValue);
-                                            }
-                                            ++j;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // ByteArray + other
-                                        string value = jv["value"].ToString();
-                                        JObject taskEscape = (JObject)notifyStruct[i];
-                                        string taskName = taskEscape["name"].ToString();
-                                        string taskValue = escapeHelper.contractDataEscap(type, value, taskEscape);
-                                        try
-                                        {
-                                            notifyInfo.Add(taskName, taskValue);
-                                        }
-                                        catch
-                                        {// txid重名
-                                            notifyInfo.Add("_" + taskName, taskValue);
-                                        }
-                                    }
-                                    ++i;
+                                    string state = execution["vmstate"].ToString();
+                                    // stack...
+                                    var c = (JArray)execution["notifications"];
+                                    if (c == null || c.Count() == 0) continue;
+                                    List<JObject> r = processNotifications(c, blockindex, txid, state);
+                                    if (r == null || r.Count() == 0) continue;
+                                    list.AddRange(r);
                                 }
-                                // 原始state数据
-                                notifyInfo.Add("state", notification["state"]);
+                                continue;
+                            }
 
-                                // 单条入库或者批量入库，这里采用批量入库方式
-                                notifyInfoArr.Add(notifyInfo);
-
-
+                            // 默认解析方式,NEO-CLI Version: 2.7.6.1
+                            else
+                            {
+                                string vmstate = jo["vmstate"].ToString();
+                                // stack...
+                                JArray notifications = (JArray)jo["notifications"];
+                                List<JObject> r = processNotifications(notifications, blockindex, txid, vmstate);
+                                if (r == null || r.Count() == 0) continue;
+                                list.AddRange(r);
                             }
                         }
 
                         // 入库==>分组(分表)
-                        notifyInfoArr.GroupBy(p => p["contractHash"], (k, g) =>
+                        list.GroupBy(p => p["contractHash"], (k, g) =>
                         {
                             string contractHash = k.ToString();
                             long count = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, new JObject() { { "blockindex", blockindex } }.ToString());
@@ -222,7 +174,6 @@ namespace ContractNotifyCollector.core.task
                                         return pk;
                                     }).ToArray();
                                 }
-                                
                             }
                             return new JArray();
                         }).ToArray(); ;
@@ -236,9 +187,9 @@ namespace ContractNotifyCollector.core.task
             }
         }
 
-        private JArray processNotifications(JArray notifications, long blockindex, string txid, string vmstate/*, JArray vmstate*/)
+        private List<JObject> processNotifications(JArray notifications, long blockindex, string txid, string vmstate/*, JArray vmstate*/)
         {
-            JArray notifyInfoArr = new JArray();
+            List<JObject> list = new List<JObject>();
             int n = 0;
             foreach (JObject notification in notifications)
             {
@@ -251,7 +202,7 @@ namespace ContractNotifyCollector.core.task
                 // 索引信息
                 JObject notifyInfo = new JObject();
                 notifyInfo.Add("blockindex", blockindex);
-                notifyInfo.Add("txid", blockindex);
+                notifyInfo.Add("txid", txid);
                 notifyInfo.Add("n", n);
                 notifyInfo.Add("vmstate", vmstate);
                 notifyInfo.Add("contractHash", contractHash);
@@ -306,9 +257,11 @@ namespace ContractNotifyCollector.core.task
                 notifyInfo.Add("state", notification["state"]);
 
                 // 单条入库或者批量入库，这里采用批量入库方式
-                notifyInfoArr.Add(notifyInfo);
+                list.Add(notifyInfo);
+
+                ++n;
             }
-            return notifyInfoArr;
+            return list;
         }
         
         private void updateLocalRecord(long height)
