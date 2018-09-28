@@ -32,6 +32,7 @@ namespace ContractNotifyCollector
             AddTask(new AuctionStateUpdateTask("AuctionStateUpdateTask"));
             AddTask(new AuctionStateUpdateTask("AuctionStateUpdateTaskTest"));
             AddTask(new CGasUtxoTask("CGasUtxoTask"));
+            AddTask(new CGasBalanceTask("CGasBalanceTask"));
         }
 
         /// <summary>
