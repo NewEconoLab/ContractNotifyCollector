@@ -136,6 +136,8 @@ namespace ContractNotifyCollector.contract.task
                                         {"createHeight", blockindex },
                                         {"markAddress", "0" },
                                         {"markTime", 0 },
+                                        {"lockAddress", "0" },
+                                        {"lockHeight", 0 },
                                     }.ToString();
                                     findstr = new JObject() { { "txid", jt["txid"] }, { "n", jvout["n"] } }.ToString();
                                     if(mh.GetDataCount(localConn.connStr, localConn.connDB, cgasUtxoCol, findstr) <= 0)
