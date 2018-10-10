@@ -1,5 +1,6 @@
 ﻿using ContractNotifyCollector.core.dao;
 using ContractNotifyCollector.helper;
+using MongoDB.Bson;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -57,7 +58,8 @@ namespace ContractNotifyCollector.core.task
 
             // db info
             localDbConnInfo = Config.localDbConnInfo;
-            remoteDbConnInfo = Config.remoteDbConnInfo;
+            //remoteDbConnInfo = Config.remoteDbConnInfo;
+            remoteDbConnInfo = Config.notifyDbConnInfo;
             blockDbConnInfo = Config.blockDbConnInfo;
             //
             initSuccFlag = true;
@@ -215,7 +217,7 @@ namespace ContractNotifyCollector.core.task
                             txid = ""
                         },
                         auctionState = AuctionState.STATE_CONFIRM,
-                        maxPrice = 0,
+                        maxPrice = format(0),
                         //ttl = time + TimeConst.getTimeSetter("." + phDict.GetValueOrDefault(parenthash)).ONE_DAY_SECONDS,
                         ttl = 0,
 
@@ -250,7 +252,7 @@ namespace ContractNotifyCollector.core.task
                         txid = ""
                     };
                     at.auctionState = AuctionState.STATE_CONFIRM;
-                    at.maxPrice = 0;
+                    at.maxPrice = format(0);
                     //at.ttl = time + TimeConst.getTimeSetter("." + phDict.GetValueOrDefault(parenthash)).ONE_YEAR_SECONDS;
                     replaceAuctionTx(at, auctionId);
                 }
@@ -278,7 +280,7 @@ namespace ContractNotifyCollector.core.task
                     // 没有竞拍信息，报错停止处理
                     error(auctionId); return;
                 }
-                if(at.maxPrice > maxPrice)
+                if(format(at.maxPrice) > maxPrice)
                 {
                     continue;
                 }
@@ -308,7 +310,7 @@ namespace ContractNotifyCollector.core.task
                     at.ttl = at.startTime.blocktime + TimeConst.getTimeSetter(at.fulldomain.Substring(at.fulldomain.IndexOf("."))).ONE_YEAR_SECONDS;
                 }
                 
-                at.maxPrice = maxPrice;
+                at.maxPrice = format(maxPrice);
                 at.maxBuyer = maxBuyer;
                 replaceAuctionTx(at, auctionId);
                
@@ -368,20 +370,20 @@ namespace ContractNotifyCollector.core.task
                     addwho = addwhoArr[0];
                     at.addwholist.Remove(addwho);
                     //addwho.totalValue = auctionidIsTo ? addwho.totalValue + value : addwho.totalValue - value;
-                    if (addwho.addpricelist != null && addwho.addpricelist.Any(p => p != null && p.time.txid == txid && p.value == value)) continue;
+                    if (addwho.addpricelist != null && addwho.addpricelist.Any(p => p != null && p.time.txid == txid && format(p.value) == value)) continue;
                 } else
                 {
                     addwho = new AuctionAddWho();
                     addwho.address = address;
-                    addwho.totalValue = 0;
-                    addwho.curTotalValue = 0;
+                    addwho.totalValue = format(0);
+                    addwho.curTotalValue = format(0);
                     //addwho.totalValue = value;
                 }
                 bool isPositiveFlag = auctionidIsTo || (!auctionidIsTo && address == bonusAddress);
                 if (isPositiveFlag)
                 {
-                    addwho.totalValue += value;
-                    addwho.curTotalValue += value;
+                    addwho.totalValue = format(format(addwho.totalValue) + value);
+                    addwho.curTotalValue = format(format(addwho.curTotalValue ) + value);
                 }
                 if (auctionidIsTo)
                 {
@@ -433,7 +435,7 @@ namespace ContractNotifyCollector.core.task
                             blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
                             txid = txid
                         },
-                        value = isPositiveFlag ? value : value * -1,
+                        value = isPositiveFlag ? format(value) : format(value * -1),
                         isEnd = isPositiveFlag ? "0" : "1"
                     });
                 }
@@ -518,7 +520,7 @@ namespace ContractNotifyCollector.core.task
         }
         private void clearOrUpdateCurAddprice(bool isClear)
         {
-            string filter = new JObject() { { "addwholist.curTotalValue", new JObject() { { "$gt", "0"} } } }.ToString();
+            string filter = new JObject() { { "addwholist.curTotalValue", new JObject() { { "$gt", 0} } } }.ToString();
             List<AuctionTx> list = mh.GetData<AuctionTx>(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, filter);
             if (list == null || list.Count == 0)
             {
@@ -531,9 +533,9 @@ namespace ContractNotifyCollector.core.task
                     {
                         if(isClear)
                         {
-                            pk.totalValue -= pk.curTotalValue;
+                            pk.totalValue = format(format(pk.totalValue) - format(pk.curTotalValue));
                         }
-                        pk.curTotalValue = 0;
+                        pk.curTotalValue = format(0);
                         return pk;
                     }).ToList();
                 // 更新数据
@@ -666,6 +668,16 @@ namespace ContractNotifyCollector.core.task
         private void ping()
         {
             LogHelper.ping(batchInterval, name());
+        }
+
+        public static BsonDecimal128 format(decimal value)
+        {
+            return BsonDecimalHelper.format(value);
+        }
+
+        public static decimal format(BsonDecimal128 value)
+        {
+            return BsonDecimalHelper.format(value);
         }
     }
 }

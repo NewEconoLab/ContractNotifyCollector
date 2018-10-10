@@ -1,6 +1,7 @@
 ﻿using ContractNotifyCollector.core;
 using ContractNotifyCollector.helper;
 using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -190,30 +191,29 @@ namespace ContractNotifyCollector.contract.task
         
         private void reset()
         {
-            string findstr = new JObject() { { "curvalue", new JObject() { { "$ne", "0" } } } }.ToString();
+            string findstr = new JObject() { { "curvalue", new JObject() { { "$ne", 0 } } } }.ToString();
             List<CGasBalanceBody> res = mh.GetData<CGasBalanceBody>(localConn.connStr, localConn.connDB, cgasBalanceStateCol, findstr);
             if(res == null || res.Count == 0) return;
 
             foreach(CGasBalanceBody item in res)
             {
-                item.balance = (decimal.Parse(item.balance) - decimal.Parse(item.curvalue)).ToString();
-                item.curvalue = "0";
+                item.balance = format(format(item.balance) - format(item.curvalue));
+                item.curvalue = format(0);
                 findstr = new JObject() { { "address", item.address }, { "register", item.register } }.ToString();
                 mh.ReplaceData<CGasBalanceBody>(localConn.connStr, localConn.connDB, cgasBalanceStateCol, item, findstr);
             }
         }
         private void confirm()
         {
-            string findstr = new JObject() { { "curvalue", new JObject() { { "$ne", "0" } } } }.ToString();
+            string findstr = new JObject() { { "curvalue", new JObject() { { "$ne", 0 } } } }.ToString();
             if (mh.GetDataCount(localConn.connStr, localConn.connDB, cgasBalanceStateCol, findstr) <= 0) return;
-            
-            JArray res = mh.GetData(localConn.connStr, localConn.connDB, cgasBalanceStateCol, findstr);
-            foreach(JObject jo in res)
+
+            List<CGasBalanceBody> res = mh.GetData<CGasBalanceBody>(localConn.connStr, localConn.connDB, cgasBalanceStateCol, findstr);
+            foreach(CGasBalanceBody jo in res)
             {
-                jo.Remove("curvalue");
-                jo.Add("curvalue", "0");
-                findstr = new JObject() { { "address", jo["address"] }, { "register", jo["register"] } }.ToString();
-                mh.ReplaceData(localConn.connStr, localConn.connDB, cgasBalanceStateCol, jo.ToString(), findstr);
+                jo.curvalue = format(0);
+                findstr = new JObject() { { "address", jo.address }, { "register", jo.register } }.ToString();
+                mh.ReplaceData<CGasBalanceBody>(localConn.connStr, localConn.connDB, cgasBalanceStateCol, jo, findstr);
             }
 
             /*
@@ -222,13 +222,16 @@ namespace ContractNotifyCollector.contract.task
             mh.UpdateData(localConn.connStr, localConn.connDB, cgasBalanceStateCol, updatestr, findstr);
             */
         }
+        [BsonIgnoreExtraElements]
         private class CGasBalanceBody
         {
             public ObjectId _id { get; set; }
             public string address { get; set; }
             public string register { get; set; }
-            public string balance { get; set; }
-            public string curvalue { get; set; }
+            //public string balance { get; set; }
+            public BsonDecimal128 balance { get; set; }
+            //public string curvalue { get; set; }
+            public BsonDecimal128 curvalue { get; set; }
         }
         private void addBalance(string address, string register, decimal value)
         {
@@ -242,8 +245,8 @@ namespace ContractNotifyCollector.contract.task
                 {
                     address = address,
                     register = register,
-                    balance = value.ToString(),
-                    curvalue = value.ToString()
+                    balance = format(value),
+                    curvalue = format(value)
                 };
                 mh.PutData<CGasBalanceBody>(localConn.connStr, localConn.connDB, cgasBalanceStateCol, data);
             }
@@ -251,8 +254,8 @@ namespace ContractNotifyCollector.contract.task
             {
                 // update or replace
                 data = res[0];
-                data.balance = (decimal.Parse(data.balance) + value).ToString();
-                data.curvalue = (decimal.Parse(data.curvalue) + value).ToString();
+                data.balance = format(format(data.balance) + value);
+                data.curvalue = format(format(data.curvalue) + value);
                 mh.ReplaceData<CGasBalanceBody>(localConn.connStr, localConn.connDB, cgasBalanceStateCol, data, findstr);
             }
         }
@@ -267,16 +270,16 @@ namespace ContractNotifyCollector.contract.task
                 {
                     address = address,
                     register = register,
-                    balance = value.ToString(),
-                    curvalue = value.ToString()
+                    balance = format(value),
+                    curvalue = format(value)
                 };
                 mh.PutData<CGasBalanceBody>(localConn.connStr, localConn.connDB, cgasBalanceStateCol, data);
             } else
             {
                 // update or replace
                 data = res[0];
-                data.balance = (decimal.Parse(data.balance) - value).ToString();
-                data.curvalue = (decimal.Parse(data.curvalue) - value).ToString();
+                data.balance = format(format(data.balance) - value);
+                data.curvalue = format(format(data.curvalue) - value);
                 mh.ReplaceData<CGasBalanceBody>(localConn.connStr, localConn.connDB, cgasBalanceStateCol, data, findstr);
             }
 
@@ -341,6 +344,16 @@ namespace ContractNotifyCollector.contract.task
         private void ping()
         {
             LogHelper.ping(batchInterval, name());
+        }
+
+        public static BsonDecimal128 format(decimal value)
+        {
+            return BsonDecimalHelper.format(value);
+        }
+
+        public static decimal format(BsonDecimal128 value)
+        {
+            return BsonDecimalHelper.format(value);
         }
     }
 }
