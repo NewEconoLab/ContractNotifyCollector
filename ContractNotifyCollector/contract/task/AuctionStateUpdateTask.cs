@@ -104,7 +104,7 @@ namespace ContractNotifyCollector.core.task
             }
 
             // 过期域名状态更新
-            JObject OneYearFilter = new JObject() { { "auctionState", AuctionState.STATE_END }, { "startTime.blocktime", new JObject() { { "$gt", nowtime - timeSetter.ONE_YEAR_SECONDS } } } };
+            JObject OneYearFilter = new JObject() { { "auctionState", AuctionState.STATE_END }, { "startTime.blocktime", new JObject() { { "$lt", nowtime - timeSetter.ONE_YEAR_SECONDS } } } };
             filter = OneYearFilter.ToString();
             count = mh.GetDataCount(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, filter);
             if (count > 0)
