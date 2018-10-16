@@ -38,6 +38,7 @@ namespace ContractNotifyCollector.core.task
         private string root; 
         private TimeSetter timeSetter;
         private DbConnInfo localDbConnInfo;
+        private DbConnInfo blockDbConnInfo;
 
         private bool initSuccFlag = false;
 
@@ -53,6 +54,7 @@ namespace ContractNotifyCollector.core.task
             timeSetter = TimeConst.getTimeSetter(root);
             // db info
             localDbConnInfo = Config.localDbConnInfo;
+            blockDbConnInfo = Config.blockDbConnInfo;
 
             //
             initSuccFlag = true;
@@ -75,11 +77,17 @@ namespace ContractNotifyCollector.core.task
                 }
             }
         }
-        
+
+        private long getNowBlockTime()
+        {
+            long index = (long)mh.GetData(blockDbConnInfo.connStr, blockDbConnInfo.connDB, "system_counter", "{counter:'block'}")[0]["lastBlockindex"];
+            long time = (long)mh.GetDataPagesWithField(blockDbConnInfo.connStr, blockDbConnInfo.connDB, "block", "{time:1}", 1, 1, "{index:1}", "{index:" + index + "}")[0]["time"];
+            return time;
+        }
         private void updateStateNew()
         {
             // 竞拍域名状态更新
-            long nowtime = TimeHelper.GetTimeStamp();
+            long nowtime = getNowBlockTime();
             JObject FiveDayFilter = MongoFieldHelper.toFilter(new string[] { AuctionState.STATE_START, AuctionState.STATE_CONFIRM, AuctionState.STATE_RANDOM }, "auctionState");
             string filter = FiveDayFilter.ToString();
             long count = mh.GetDataCount(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, filter);
