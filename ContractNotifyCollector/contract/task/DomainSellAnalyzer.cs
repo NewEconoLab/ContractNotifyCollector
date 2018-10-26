@@ -402,7 +402,7 @@ namespace ContractNotifyCollector.core.task
                     };
                 } else
                 {
-                    if (bonusAddress != address && value > 0)
+                    if (bonusAddress != address /*&& value > 0*/)
                     {
                         addwho.accountTime = new AuctionTime
                         {
