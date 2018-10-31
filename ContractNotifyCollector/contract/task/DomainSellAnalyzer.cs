@@ -147,6 +147,16 @@ namespace ContractNotifyCollector.core.task
                         {
                             updateR3(rr, blockindex, blockindexDict);
                         }
+                        rr = res.Where(p2 => p2["displayName"].ToString() == "raise").ToArray();
+                        if (rr != null && rr.Count() != 0)
+                        {
+                            updateR3_Raise(rr, blockindex, blockindexDict);
+                        }
+                        rr = res.Where(p2 => p2["displayName"].ToString() == "bidSettlement").ToArray();
+                        if (rr != null && rr.Count() != 0)
+                        {
+                            updateR3_BidSettlement(rr, blockindex, blockindexDict);
+                        }
                         rr = res.Where(p2 => p2["displayName"].ToString() == "raiseEndsAuction").ToArray();
                         if (rr != null && rr.Count() != 0)
                         {
@@ -442,6 +452,164 @@ namespace ContractNotifyCollector.core.task
                 at.addwholist.Add(addwho);
                 replaceAuctionTx(at, auctionId);
                 
+            }
+        }
+
+        private void updateR3_Raise(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
+        {
+            foreach(var jt in rr)
+            {
+                string who = jt["who"].ToString();
+                decimal value = decimal.Parse(jt["value"].ToString());
+                string auctionId = jt["auctionId"].ToString();
+                string txid = jt["txid"].ToString();
+                AuctionTx at = queryAuctionTx(auctionId);
+                if(at == null)
+                {
+                    // 没有竞拍信息，报错停止处理
+                    error(auctionId); return;
+                }
+                if (at.addwholist == null)
+                {
+                    at.addwholist = new List<AuctionAddWho>();
+                }
+                AuctionAddWho addwho = null;
+                AuctionAddWho[] addwhoArr = at.addwholist.Where(p => p.address == who).ToArray();
+                if (addwhoArr != null && addwhoArr.Count() > 0)
+                {
+                    addwho = addwhoArr[0];
+                    at.addwholist.Remove(addwho);
+                }
+                else
+                {
+                    addwho = new AuctionAddWho();
+                    addwho.address = who;
+                    addwho.totalValue = format(0);
+                    addwho.curTotalValue = format(0);
+                }
+
+                //
+                bool hasExist = addwho.addpricelist != null && addwho.addpricelist.Any(p => p != null && p.time.txid == txid && p.value == value);
+                if (hasExist) continue;
+
+                // 加价总额
+                addwho.totalValue = format(format(addwho.totalValue) + value);
+                addwho.curTotalValue = format(format(addwho.curTotalValue) + value);
+                // 最后加价时间
+                addwho.lastTime = new AuctionTime
+                {
+                    blockindex = blockindex,
+                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = txid
+                };
+                // 最后操作时间(包括最后加价时间/领取域名/取回Gas时间)
+                at.lastTime = new AuctionTime
+                {
+                    blockindex = blockindex,
+                    blocktime = blockindex == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = blockindex == 0 ? "" : txid
+                };
+
+                // 加价列表
+                if (addwho.addpricelist == null)
+                {
+                    addwho.addpricelist = new List<AuctionAddPrice>();
+                }
+                addwho.addpricelist.Add(new AuctionAddPrice
+                {
+                    time = new AuctionTime
+                    {
+                        blockindex = blockindex,
+                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                        txid = txid
+                    },
+                    value = format(value),
+                    isEnd = "0" // 表示加价
+                });
+                at.addwholist.Add(addwho);
+                replaceAuctionTx(at, auctionId);
+            }
+        }
+        private void updateR3_BidSettlement(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
+        {
+            foreach (var jt in rr)
+            {
+                string who = jt["who"].ToString();
+                decimal value = decimal.Parse(jt["value"].ToString());
+                string auctionId = jt["auctionId"].ToString();
+                string txid = jt["txid"].ToString();
+                AuctionTx at = queryAuctionTx(auctionId);
+                if (at == null)
+                {
+                    // 没有竞拍信息，报错停止处理
+                    error(auctionId); return;
+                }
+                if (at.addwholist == null)
+                {
+                    at.addwholist = new List<AuctionAddWho>();
+                }
+                AuctionAddWho addwho = null;
+                AuctionAddWho[] addwhoArr = at.addwholist.Where(p => p.address == who).ToArray();
+                if (addwhoArr != null && addwhoArr.Count() > 0)
+                {
+                    addwho = addwhoArr[0];
+                    at.addwholist.Remove(addwho);
+                }
+                else
+                {
+                    addwho = new AuctionAddWho();
+                    addwho.address = who;
+                    addwho.totalValue = format(0);
+                    addwho.curTotalValue = format(0);
+                }
+
+                //
+                bool hasExist = addwho.addpricelist != null && addwho.addpricelist.Any(p => p != null && p.time.txid == txid && p.value == value);
+                if (hasExist) continue;
+
+                
+                // 加价总额
+                /*addwho.totalValue = format(format(addwho.totalValue) + value);
+                addwho.curTotalValue = format(format(addwho.curTotalValue) + value);
+                addwho.lastTime = new AuctionTime
+                {
+                    blockindex = blockindex,
+                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = txid
+                }*/;
+                // 结算时间(领取域名/取回CGas)
+                addwho.accountTime = new AuctionTime
+                {
+                    blockindex = blockindex,
+                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = txid
+                };
+                // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
+                at.lastTime = new AuctionTime
+                {
+                    blockindex = blockindex,
+                    blocktime = blockindex == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
+                    txid = blockindex == 0 ? "" : txid
+                };
+
+                // 加价列表
+                if (addwho.addpricelist == null)
+                {
+                    addwho.addpricelist = new List<AuctionAddPrice>();
+                }
+                addwho.addpricelist.Add(new AuctionAddPrice
+                {
+                    time = new AuctionTime
+                    {
+                        blockindex = blockindex,
+                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                        txid = txid
+                    },
+                    value = format(value*-1),
+                    isEnd = "1" // 表示结算
+                });
+                at.addwholist.Add(addwho);
+                replaceAuctionTx(at, auctionId);
             }
         }
         private void updateR4(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)

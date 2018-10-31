@@ -6,6 +6,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace ContractNotifyCollector.contract.task
 {
@@ -86,7 +87,7 @@ namespace ContractNotifyCollector.contract.task
                 ping();
 
                 // 获取远程已同步高度
-                long remoteHeight = getRemoteHeight();
+                long remoteHeight =  getRemoteHeight();
 
                 // 获取本地已处理高度
                 long localHeight = getLocalHeight();
@@ -103,6 +104,9 @@ namespace ContractNotifyCollector.contract.task
                     long nextIndex = index + batchSize;
                     long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
 
+                    /**
+                     * Cgas 计算充值/提取方式替换为Sell setMoneyIn/getMoneyBack方式
+                     * 
                     // 获取Cgas充值、提取
                     sgasFilter.Remove("blockindex");
                     sgasFilter.Add("blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } });
@@ -150,7 +154,6 @@ namespace ContractNotifyCollector.contract.task
                         res = mh.GetData(remoteConn.connStr, remoteConn.connDB, reghash, findstr);
                         if(res != null && res.Count > 0)
                         {
-                            
                             var r1 = res.Where(p => p["from"].ToString().Length == 34).GroupBy(rp => rp["from"], (rk, rg) => {
 
                                 string address = rk.ToString();
@@ -164,7 +167,6 @@ namespace ContractNotifyCollector.contract.task
                                 if (item.Value == 0) continue;
                                 subBalance(item.Key, reghash, item.Value);
                             }
-                            Console.WriteLine();
                             var r2 = res.Where(p => p["to"].ToString().Length == 34).GroupBy(rp => rp["to"], (rk, rg) => {
 
                                 string address = rk.ToString();
@@ -178,8 +180,30 @@ namespace ContractNotifyCollector.contract.task
                                 if (item.Value == 0) continue;
                                 addBalance(item.Key, reghash, item.Value);
                             }
-                            Console.WriteLine();
                         }
+                    }
+                    */
+                    string findstr = null;
+                    JArray res = null;
+                    foreach (string reghash in registerHashArr)
+                    {
+                        findstr = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } }, { "$or", new JArray(){
+                            //new JObject(){{"displayName", "assetManagement"} },
+                            new JObject(){{"displayName", "raise"} },
+                            new JObject(){{"displayName", "bidSettlement" } },
+                            new JObject(){{"displayName", "setMoneyIn"} },
+                            new JObject(){{"displayName", "getMoneyBack"} }
+                        } } }.ToString();
+                        res = mh.GetData(remoteConn.connStr, remoteConn.connDB, reghash, findstr);
+                        var
+                        jt = res.Where(p => p["displayName"].ToString() == "setMoneyIn").ToArray();
+                        processSetMoneyIn(jt, reghash);
+                        jt = res.Where(p => p["displayName"].ToString() == "raise").ToArray();
+                        processRaise(jt, reghash);
+                        jt = res.Where(p => p["displayName"].ToString() == "bidSettlement").ToArray();
+                        processBidSettlement(jt, reghash);
+                        jt = res.Where(p => p["displayName"].ToString() == "getMoneyBack").ToArray();
+                        processGetMoneyBack(jt, reghash);
                     }
 
                     confirm();
@@ -187,6 +211,72 @@ namespace ContractNotifyCollector.contract.task
                     log(endIndex, remoteHeight);
                 }
             }
+        }
+        private void processSetMoneyIn(JToken[] res, string reghash)
+        {
+            if (res == null || res.Count() == 0) return;
+
+            // 充值cgas
+            res.GroupBy(p => p["who"], (k,g) => {
+                return new
+                {
+                    addr = k.ToString(),
+                    value = g.Select(pg => decimal.Parse(pg["value"].ToString())).Sum()
+                };
+            }).ToList().ForEach(pf => {
+                addBalance(pf.addr, reghash, pf.value);
+            });
+        }
+        private void processGetMoneyBack(JToken[] res, string reghash)
+        {
+            if (res == null || res.Count() == 0) return;
+
+            // 提取cgas
+            res.GroupBy(p => p["who"], (k, g) => {
+                return new
+                {
+                    addr = k.ToString(),
+                    value = g.Select(pg => decimal.Parse(pg["value"].ToString())).Sum()
+                };
+            }).ToList().ForEach(pf => {
+                subBalance(pf.addr, reghash, pf.value);
+            });
+        }
+        private void processRaise(JToken[] res, string reghash)
+        {
+            if (res == null || res.Count() == 0) return;
+
+            // 加价-
+            // usrAddr=100%(to=auctionId)
+            res.GroupBy(p => p["who"], (k, g) => {
+                return new
+                {
+                    addr = k.ToString(),
+                    value = g.Select(pg => decimal.Parse(pg["value"].ToString())).Sum()
+                };
+            }).ToList().ForEach(pf => {
+                subBalance(pf.addr, reghash, pf.value);
+            });
+        }
+        private void processBidSettlement(JToken[] res, string reghash)
+        {
+            if (res == null || res.Count() == 0) return;
+
+            // 结算+
+            /**
+             * 领取域名：regAddr=100%, usrAddr=0%(from=auctionId)
+             * 取回cgas：regAddr=10%, usrAddr=90%(from=auctionId)
+             */
+            res.GroupBy(p => p["who"], (k, g) => {
+                return new
+                {
+                    addr = k.ToString(),
+                    value = g.Select(pg => decimal.Parse(pg["value"].ToString())).Sum()
+                };
+            }).ToList().ForEach(pf => {
+                addBalance(pf.addr, reghash, pf.value);
+            });
+
         }
         
         private void reset()
@@ -270,8 +360,8 @@ namespace ContractNotifyCollector.contract.task
                 {
                     address = address,
                     register = register,
-                    balance = format(value),
-                    curvalue = format(value)
+                    balance = format(value*-1),
+                    curvalue = format(value*-1)
                 };
                 mh.PutData<CGasBalanceBody>(localConn.connStr, localConn.connDB, cgasBalanceStateCol, data);
             } else
