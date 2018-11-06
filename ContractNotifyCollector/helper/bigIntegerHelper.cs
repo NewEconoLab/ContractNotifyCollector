@@ -10,6 +10,18 @@ namespace contractNotifyExtractor.Helper
         //十六进制转数值（考虑精度调整）
         public static string getNumStrFromHexStr(this string hexStr, int decimals)
         {
+            bool flag = true;
+            if(flag)
+            {
+                BigInteger b = new BigInteger(ThinNeo.Helper.HexString2Bytes(hexStr));
+                string bStr = b.ToString();
+                if(bStr.StartsWith("-"))
+                {
+                    return "-" + changeDecimals(BigInteger.Multiply(-1, b), decimals);
+                }
+                return changeDecimals(b, decimals);
+
+            }
             //小头换大头
             byte[] bytes = ThinNeo.Helper.HexString2Bytes(hexStr).Reverse().ToArray();
             string hex = ThinNeo.Helper.Bytes2HexString(bytes);

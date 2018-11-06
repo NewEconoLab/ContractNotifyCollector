@@ -58,7 +58,7 @@ namespace ContractNotifyCollector.core.task
 
             // db info
             localDbConnInfo = Config.localDbConnInfo;
-            //remoteDbConnInfo = Config.remoteDbConnInfo;
+
             remoteDbConnInfo = Config.notifyDbConnInfo;
             blockDbConnInfo = Config.blockDbConnInfo;
             //
@@ -130,12 +130,14 @@ namespace ContractNotifyCollector.core.task
                     for (int i = 0; i < cnt; ++i)
                     {
                         long blockindex = blockindexArr[i];
+                        long rblockindex = blockindex - 1;
+                        long rblocktime = blockindexDict.GetValueOrDefault(rblockindex+"");
                         JToken[] res = queryRes.Where(p => int.Parse(p["blockindex"].ToString()) == blockindex).ToArray();
                         JToken[] rr = null;
                         rr = res.Where(p2 => p2["displayName"].ToString() == "startAuction").ToArray();
                         if(rr != null && rr.Count() != 0)
                         {
-                            updateR1(rr, blockindex, blockindexDict);
+                            updateR1(rr, blockindex, rblockindex, rblocktime);
                         }
                         rr = res.Where(p2 => p2["displayName"].ToString() == "changeAuctionState").ToArray();
                         if (rr != null && rr.Count() != 0)
@@ -150,22 +152,22 @@ namespace ContractNotifyCollector.core.task
                         rr = res.Where(p2 => p2["displayName"].ToString() == "raise").ToArray();
                         if (rr != null && rr.Count() != 0)
                         {
-                            updateR3_Raise(rr, blockindex, blockindexDict);
+                            updateR3_Raise(rr, blockindex, rblockindex, rblocktime);
                         }
                         rr = res.Where(p2 => p2["displayName"].ToString() == "bidSettlement").ToArray();
                         if (rr != null && rr.Count() != 0)
                         {
-                            updateR3_BidSettlement(rr, blockindex, blockindexDict);
+                            updateR3_BidSettlement(rr, blockindex, rblockindex, rblocktime);
                         }
                         rr = res.Where(p2 => p2["displayName"].ToString() == "raiseEndsAuction").ToArray();
                         if (rr != null && rr.Count() != 0)
                         {
-                            updateR4(rr, blockindex, blockindexDict);
+                            updateR4(rr, blockindex, rblockindex, rblocktime);
                         }
                         rr = res.Where(p2 => p2["displayName"].ToString() == "collectDomain").ToArray();
                         if (rr != null && rr.Count() != 0)
                         {
-                            updateR5(rr, blockindex, blockindexDict);
+                            updateR5(rr, blockindex, rblockindex, rblocktime);
                         }
 
                         // 更新已处理累加
@@ -190,7 +192,8 @@ namespace ContractNotifyCollector.core.task
             }
         }
         
-        private void updateR1(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
+
+        private void updateR1(JToken[] rr, long blockindex/*tx出块时间*/, long rblockindex/*业务判断时间*/, long rblocktime)
         {// startAuction
 
             // 哈希域名列表(父域名-父哈希)
@@ -202,8 +205,7 @@ namespace ContractNotifyCollector.core.task
                 string domain = jt["domain"].ToString();
                 string parenthash = jt["parenthash"].ToString();
                 string who = jt["who"].ToString();
-                string txid = jt["txid"].ToString();
-                long time = blockindexDict.GetValueOrDefault(blockindex + "");
+                string txid = jt["txid"].ToString();  // 参数blockindex为该txid出块时间
                 AuctionTx at = queryAuctionTx(auctionId);
                 if (at == null)
                 {
@@ -214,16 +216,17 @@ namespace ContractNotifyCollector.core.task
                         parenthash = parenthash,
                         fulldomain = domain + "." + phDict.GetValueOrDefault(parenthash),
                         startAddress = who,
-                        /*startTime = new AuctionTime
+                        /*
+                        startTime = new AuctionTime
                         {
-                            blockindex = blockindex,
-                            blocktime = time,
-                            txid = txid
+                            blockindex = rblockindex,
+                            blocktime = rblocktime,
+                            txid = txid 
                         },*/
                         endTime = new AuctionTime
                         {
                             blockindex = 0,
-                            blocktime = 0,// time + THREE_DAY_SECONDS,
+                            blocktime = 0,
                             txid = ""
                         },
                         auctionState = AuctionState.STATE_CONFIRM,
@@ -234,9 +237,9 @@ namespace ContractNotifyCollector.core.task
                         // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
                         lastTime = new AuctionTime
                         {
-                            blockindex = blockindex,
-                            blocktime = blockindex == 0 ? 0 : time,
-                            txid = blockindex == 0 ? "" : txid
+                            blockindex = rblockindex,
+                            blocktime = rblocktime,
+                            txid = txid
                         }
                     };
                     insertAuctionTx(at);
@@ -251,19 +254,20 @@ namespace ContractNotifyCollector.core.task
                     /*
                     at.startTime = new AuctionTime
                     {
-                        blockindex = blockindex,
-                        blocktime = time,
+                        blockindex = rblockindex,
+                        blocktime = rblocktime,
                         txid = txid
                     };*/
                     at.endTime = new AuctionTime
                     {
                         blockindex = 0,
-                        blocktime = 0,//time + THREE_DAY_SECONDS,
+                        blocktime = 0,
                         txid = ""
                     };
                     at.auctionState = AuctionState.STATE_CONFIRM;
                     at.maxPrice = format(0);
                     //at.ttl = time + TimeConst.getTimeSetter("." + phDict.GetValueOrDefault(parenthash)).ONE_YEAR_SECONDS;
+                    at.ttl = 0;
                     replaceAuctionTx(at, auctionId);
                 }
 
@@ -302,7 +306,7 @@ namespace ContractNotifyCollector.core.task
                     at.endTime = new AuctionTime
                     {
                         blockindex = endBlock,
-                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                        blocktime = blockindexDict.GetValueOrDefault(endBlock + ""),
                         txid = txid
                     };
                 }
@@ -323,7 +327,6 @@ namespace ContractNotifyCollector.core.task
                 at.maxPrice = format(maxPrice);
                 at.maxBuyer = maxBuyer;
                 replaceAuctionTx(at, auctionId);
-               
             }
         }
 
@@ -455,7 +458,8 @@ namespace ContractNotifyCollector.core.task
             }
         }
 
-        private void updateR3_Raise(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
+
+        private void updateR3_Raise(JToken[] rr, long blockindex, long rblockindex, long rblocktime)
         {
             foreach(var jt in rr)
             {
@@ -498,16 +502,16 @@ namespace ContractNotifyCollector.core.task
                 // 最后加价时间
                 addwho.lastTime = new AuctionTime
                 {
-                    blockindex = blockindex,
-                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    blockindex = rblockindex,
+                    blocktime = rblocktime,
                     txid = txid
                 };
                 // 最后操作时间(包括最后加价时间/领取域名/取回Gas时间)
                 at.lastTime = new AuctionTime
                 {
-                    blockindex = blockindex,
-                    blocktime = blockindex == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
-                    txid = blockindex == 0 ? "" : txid
+                    blockindex = rblockindex,
+                    blocktime = rblocktime,
+                    txid = txid
                 };
 
                 // 加价列表
@@ -519,8 +523,8 @@ namespace ContractNotifyCollector.core.task
                 {
                     time = new AuctionTime
                     {
-                        blockindex = blockindex,
-                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                        blockindex = rblockindex,
+                        blocktime = rblocktime,
                         txid = txid
                     },
                     value = format(value),
@@ -530,7 +534,8 @@ namespace ContractNotifyCollector.core.task
                 replaceAuctionTx(at, auctionId);
             }
         }
-        private void updateR3_BidSettlement(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
+
+        private void updateR3_BidSettlement(JToken[] rr, long blockindex, long rblockindex, long rblocktime)
         {
             foreach (var jt in rr)
             {
@@ -566,30 +571,20 @@ namespace ContractNotifyCollector.core.task
                 //
                 bool hasExist = addwho.addpricelist != null && addwho.addpricelist.Any(p => p != null && p.time.txid == txid && p.value == value);
                 if (hasExist) continue;
-
                 
-                // 加价总额
-                /*addwho.totalValue = format(format(addwho.totalValue) + value);
-                addwho.curTotalValue = format(format(addwho.curTotalValue) + value);
-                addwho.lastTime = new AuctionTime
-                {
-                    blockindex = blockindex,
-                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
-                    txid = txid
-                }*/;
                 // 结算时间(领取域名/取回CGas)
                 addwho.accountTime = new AuctionTime
                 {
-                    blockindex = blockindex,
-                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    blockindex = rblockindex,
+                    blocktime = rblocktime,
                     txid = txid
                 };
                 // 最后操作时间(包括最后出价时间和领取域名/取回Gas时间)
                 at.lastTime = new AuctionTime
                 {
-                    blockindex = blockindex,
-                    blocktime = blockindex == 0 ? 0 : blockindexDict.GetValueOrDefault(blockindex + ""),
-                    txid = blockindex == 0 ? "" : txid
+                    blockindex = rblockindex,
+                    blocktime = rblocktime,
+                    txid = txid
                 };
 
                 // 加价列表
@@ -601,8 +596,8 @@ namespace ContractNotifyCollector.core.task
                 {
                     time = new AuctionTime
                     {
-                        blockindex = blockindex,
-                        blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                        blockindex = rblockindex,
+                        blocktime = rblocktime,
                         txid = txid
                     },
                     value = format(value*-1),
@@ -612,7 +607,8 @@ namespace ContractNotifyCollector.core.task
                 replaceAuctionTx(at, auctionId);
             }
         }
-        private void updateR4(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
+
+        private void updateR4(JToken[] rr, long blockindex, long rblockindex, long rblocktime)
         {//raiseEndsAuction
             foreach (JToken jt in rr)
             {
@@ -628,15 +624,16 @@ namespace ContractNotifyCollector.core.task
                 at.endAddress = who;
                 at.endTime = new AuctionTime
                 {
-                    blockindex = blockindex,
-                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    blockindex = rblockindex,
+                    blocktime = rblocktime,
                     txid = txid
                 };
                 replaceAuctionTx(at, auctionId);
 
             }
         }
-        private void updateR5(JToken[] rr, long blockindex, Dictionary<string, long> blockindexDict)
+
+        private void updateR5(JToken[] rr, long blockindex, long rblockindex, long rblocktime)
         {// collectDomain
             foreach (JToken jt in rr)
             {
@@ -667,10 +664,11 @@ namespace ContractNotifyCollector.core.task
                     addwho = new AuctionAddWho();
                     addwho.address = who;
                 }
+                // 领取域名时间
                 addwho.getdomainTime = new AuctionTime
                 {
-                    blockindex = blockindex,
-                    blocktime = blockindexDict.GetValueOrDefault(blockindex + ""),
+                    blockindex = rblockindex,
+                    blocktime = rblocktime,
                     txid = txid
                 };
                 at.addwholist.Add(addwho);
