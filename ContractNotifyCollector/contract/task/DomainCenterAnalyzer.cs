@@ -40,6 +40,7 @@ namespace ContractNotifyCollector.core.task
         private string domainResolverCol;
         private string domainRecord;
         private string domainOwnerCol;
+        private string nnsSellingAddr;
         private int batchSize;
         private int batchInterval;
         private bool initSuccFlag = false;
@@ -53,12 +54,13 @@ namespace ContractNotifyCollector.core.task
             domainResolverCol = cfg["domainResolverCol"].ToString();
             domainRecord = cfg["domainRecord"].ToString();
             domainOwnerCol = cfg["domainOwnerCol"].ToString();
+            nnsSellingAddr = cfg["nnsSellingAddr"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
 
             // db info
             localDbConnInfo = Config.localDbConnInfo;
-            remoteDbConnInfo = Config.remoteDbConnInfo;
+            remoteDbConnInfo = Config.notifyDbConnInfo;
             //
             initSuccFlag = true;
         }
@@ -99,6 +101,7 @@ namespace ContractNotifyCollector.core.task
                     JArray andFilter = new JArray();
                     andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$gte", startIndex } } } });
                     andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$lte", endIndex } } } });
+                    andFilter.Add(new JObject() { { "owner", new JObject() { { "$ne",  nnsSellingAddr} } } });
                     JObject domainCenterFilter = new JObject() { { "$and", andFilter } };
                     JObject domainCenterField = new JObject() { { "state", 0 } };
                     JArray domainCenterRes = mh.GetDataWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainCenterCol, domainCenterField.ToString(), domainCenterFilter.ToString());
