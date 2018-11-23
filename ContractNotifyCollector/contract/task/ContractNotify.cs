@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using ContractNotifyCollector.helper;
 using Newtonsoft.Json.Linq;
 
@@ -84,107 +85,121 @@ namespace ContractNotifyCollector.core.task
             if (!initSuccFlag) return;
             while (true)
             {
-                ping();
-
-                // 获取远程已同步高度
-                long remoteHeight = getRemoteHeight();
-
-                // 获取本地已处理高度
-                long localHeight = getLocalHeight();
-
-                //
-                if (remoteHeight <= localHeight)
+                try
                 {
-                    log(localHeight, remoteHeight);
-                    continue;
+                    ping();
+                    process();
                 }
-
-                for (long startIndex = localHeight; startIndex <= remoteHeight; startIndex += batchSize)
+                catch (Exception ex)
                 {
-                    long nextIndex = startIndex + batchSize;
-                    long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
-                    // 待处理数据
-                    JArray res = GetRemoteData(startIndex, endIndex);
-                    if(res == null || res.Count == 0)
-                    {
-                        updateLocalRecord(endIndex);
-                        log(endIndex, remoteHeight);
-                        continue;
-                    }
-                    // 分析数据
-                    long[] blockindexArr = res.Select(p => long.Parse(p["blockindex"].ToString())).Distinct().OrderBy(p => p).ToArray();
-                    foreach (long blockindex in blockindexArr)
-                    {
-                        // 解析
-                        List<JObject> list = new List<JObject>();
-                        foreach (JObject jo in res.Where(p => long.Parse(p["blockindex"].ToString()) == blockindex))
-                        {
-                            string txid = jo["txid"].ToString();
-
-                            // 新版解析方式,NEO-CLI Version: 2.9.0.0
-                            if(jo["executions"] != null)
-                            {
-                                foreach (JObject execution in (JArray)jo["executions"])
-                                {
-                                    string state = execution["vmstate"].ToString();
-                                    // stack...
-                                    var c = (JArray)execution["notifications"];
-                                    if (c == null || c.Count() == 0) continue;
-                                    List<JObject> r = processNotifications(c, blockindex, txid, state);
-                                    if (r == null || r.Count() == 0) continue;
-                                    list.AddRange(r);
-                                }
-                                continue;
-                            }
-
-                            // 默认解析方式,NEO-CLI Version: 2.7.6.1
-                            else
-                            {
-                                string vmstate = jo["vmstate"].ToString();
-                                // stack...
-                                JArray notifications = (JArray)jo["notifications"];
-                                List<JObject> r = processNotifications(notifications, blockindex, txid, vmstate);
-                                if (r == null || r.Count() == 0) continue;
-                                list.AddRange(r);
-                            }
-                        }
-
-                        // 入库==>分组(分表)
-                        list.GroupBy(p => p["contractHash"], (k, g) =>
-                        {
-                            string contractHash = k.ToString();
-                            long count = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, new JObject() { { "blockindex", blockindex } }.ToString());
-                            if(count <= 0)
-                            {
-                                mh.setIndex(localConn.connStr, localConn.connDB, contractHash, "{'blockindex':1,'txid':1,'n':1}", "i_blockindex_txid_n");
-                                long cnt = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, new JObject() { {"blockindex", blockindex } }.ToString());
-                                if(cnt <= 0)
-                                {
-                                    mh.PutData(localConn.connStr, localConn.connDB, contractHash, new JArray() { g });
-                                } else
-                                {
-                                    g.Select(pk =>
-                                    {
-                                        string findstr = new JObject() { { "txid", pk["txid"]}, { "n", pk["n"] }, { "displayName", pk["displayName"] } }.ToString();
-                                        long cnt2 = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, findstr);
-                                        if(cnt2 <=0)
-                                        {
-                                            mh.PutData(localConn.connStr, localConn.connDB, contractHash, pk);
-                                        }
-                                        return pk;
-                                    }).ToArray();
-                                }
-                            }
-                            return new JArray();
-                        }).ToArray(); ;
-                        // 更新高度
-                        updateLocalRecord(blockindex);
-                        log(blockindex, remoteHeight);
-                    }
-
+                    LogHelper.printEx(ex);
+                    Thread.Sleep(10*000);
                 }
 
             }
+        }
+
+        private void process()
+        {
+            // 获取远程已同步高度
+            long remoteHeight = getRemoteHeight();
+
+            // 获取本地已处理高度
+            long localHeight = getLocalHeight();
+
+            //
+            if (remoteHeight <= localHeight)
+            {
+                log(localHeight, remoteHeight);
+                return;
+            }
+
+            for (long startIndex = localHeight; startIndex <= remoteHeight; startIndex += batchSize)
+            {
+                long nextIndex = startIndex + batchSize;
+                long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
+                // 待处理数据
+                JArray res = GetRemoteData(startIndex, endIndex);
+                if (res == null || res.Count == 0)
+                {
+                    updateLocalRecord(endIndex);
+                    log(endIndex, remoteHeight);
+                    continue;
+                }
+                // 分析数据
+                long[] blockindexArr = res.Select(p => long.Parse(p["blockindex"].ToString())).Distinct().OrderBy(p => p).ToArray();
+                foreach (long blockindex in blockindexArr)
+                {
+                    // 解析
+                    List<JObject> list = new List<JObject>();
+                    foreach (JObject jo in res.Where(p => long.Parse(p["blockindex"].ToString()) == blockindex))
+                    {
+                        string txid = jo["txid"].ToString();
+
+                        // 新版解析方式,NEO-CLI Version: 2.9.0.0
+                        if (jo["executions"] != null)
+                        {
+                            foreach (JObject execution in (JArray)jo["executions"])
+                            {
+                                string state = execution["vmstate"].ToString();
+                                // stack...
+                                var c = (JArray)execution["notifications"];
+                                if (c == null || c.Count() == 0) continue;
+                                List<JObject> r = processNotifications(c, blockindex, txid, state);
+                                if (r == null || r.Count() == 0) continue;
+                                list.AddRange(r);
+                            }
+                            continue;
+                        }
+
+                        // 默认解析方式,NEO-CLI Version: 2.7.6.1
+                        else
+                        {
+                            string vmstate = jo["vmstate"].ToString();
+                            // stack...
+                            JArray notifications = (JArray)jo["notifications"];
+                            List<JObject> r = processNotifications(notifications, blockindex, txid, vmstate);
+                            if (r == null || r.Count() == 0) continue;
+                            list.AddRange(r);
+                        }
+                    }
+
+                    // 入库==>分组(分表)
+                    list.GroupBy(p => p["contractHash"], (k, g) =>
+                    {
+                        string contractHash = k.ToString();
+                        long count = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, new JObject() { { "blockindex", blockindex } }.ToString());
+                        if (count <= 0)
+                        {
+                            mh.setIndex(localConn.connStr, localConn.connDB, contractHash, "{'blockindex':1,'txid':1,'n':1}", "i_blockindex_txid_n");
+                            long cnt = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, new JObject() { { "blockindex", blockindex } }.ToString());
+                            if (cnt <= 0)
+                            {
+                                mh.PutData(localConn.connStr, localConn.connDB, contractHash, new JArray() { g });
+                            }
+                            else
+                            {
+                                g.Select(pk =>
+                                {
+                                    string findstr = new JObject() { { "txid", pk["txid"] }, { "n", pk["n"] }, { "displayName", pk["displayName"] } }.ToString();
+                                    long cnt2 = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, findstr);
+                                    if (cnt2 <= 0)
+                                    {
+                                        mh.PutData(localConn.connStr, localConn.connDB, contractHash, pk);
+                                    }
+                                    return pk;
+                                }).ToArray();
+                            }
+                        }
+                        return new JArray();
+                    }).ToArray(); ;
+                    // 更新高度
+                    updateLocalRecord(blockindex);
+                    log(blockindex, remoteHeight);
+                }
+
+            }
+
         }
 
         private List<JObject> processNotifications(JArray notifications, long blockindex, string txid, string vmstate/*, JArray vmstate*/)
