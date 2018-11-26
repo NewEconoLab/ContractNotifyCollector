@@ -5,27 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace ContractNotifyCollector.contract.task
 {
     class CGasUtxoTask : ContractTask
     {
-        private JObject config;
-        public CGasUtxoTask(string name) : base(name)
-        {
-        }
-
-        public override void initConfig(JObject config)
-        {
-            this.config = config;
-            initConfig();
-        }
-
-        public override void startTask()
-        {
-            run();
-        }
-
         private MongoDBHelper mh = new MongoDBHelper();
         private DbConnInfo remoteConn;
         private DbConnInfo localConn;
@@ -39,9 +24,13 @@ namespace ContractNotifyCollector.contract.task
         private int batchSize;
         private int batchInterval;
         private bool hasInitSuccess = false;
-        private void initConfig()
-        {
 
+        public CGasUtxoTask(string name) : base(name)
+        {
+        }
+
+        public override void initConfig(JObject config)
+        {
             JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name() && p["taskNet"].ToString() == networkType()).ToArray()[0]["taskInfo"];
 
             utxoCol = cfg["utxoCol"].ToString();
@@ -55,78 +44,93 @@ namespace ContractNotifyCollector.contract.task
 
             remoteConn = Config.blockDbConnInfo;
             localConn = Config.notifyDbConnInfo;
-            // 
             hasInitSuccess = true;
         }
-        private void run()
+
+        public override void startTask()
         {
             if (!hasInitSuccess) return;
             while(true)
             {
-                //
-                ping();
-                // 
-                updateState();
-
-                // 获取远程已同步高度
-                long remoteHeight = getRemoteHeight();
-
-                // 获取本地已处理高度
-                long localHeight = getLocalHeight();
-
-                // 
-                if (remoteHeight <= localHeight)
+                try
                 {
-                    log(localHeight, remoteHeight);
+                    ping();
+                    process();
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.printEx(ex);
+                    Thread.Sleep(10 * 000);
+                    // continue
+                }
+
+            }
+        }
+
+        private void process()
+        {
+            // 
+            updateState();
+
+            // 获取远程已同步高度
+            long remoteHeight = getRemoteHeight();
+
+            // 获取本地已处理高度
+            long localHeight = getLocalHeight();
+
+            // 
+            if (remoteHeight <= localHeight)
+            {
+                log(localHeight, remoteHeight);
+                return ;
+            }
+
+            for (long index = localHeight; index <= remoteHeight; index += batchSize)
+            {
+                long nextIndex = index + batchSize;
+                long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
+
+                // 待处理数据
+                //string findstr = new JObject() { {"addr", cgasAddress },{ "createHeight", new JObject() { { "$gt", index }, { "$lte", endIndex } } } }.ToString();
+                //string fieldstr = new JObject() { { "state", 0 } }.ToString();
+                string findstr = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } }, { "type", new JObject() { { "$ne", "MinerTransaction" } } } }.ToString();
+                string fieldstr = new JObject() { { "vin", 1 }, { "vout", 1 }, { "blockindex", 1 }, { "txid", 1 } }.ToString();
+                JArray queryRes = mh.GetDataWithField(remoteConn.connStr, remoteConn.connDB, utxoCol, fieldstr, findstr);
+                if (queryRes == null || queryRes.Count == 0)
+                {
+                    updateRecord(endIndex);
+                    log(endIndex, remoteHeight);
                     continue;
                 }
 
-                for (long index = localHeight; index <= remoteHeight; index += batchSize)
+                //long[] blockindexArr = queryRes.Select(p => long.Parse(p["createHeight"].ToString())).Distinct().ToArray();
+                long[] blockindexArr = queryRes.Select(p => long.Parse(p["blockindex"].ToString())).Distinct().OrderBy(p => p).ToArray();
+
+                foreach (long blockindex in blockindexArr)
                 {
-                    long nextIndex = index + batchSize;
-                    long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
-
-                    // 待处理数据
-                    //string findstr = new JObject() { {"addr", cgasAddress },{ "createHeight", new JObject() { { "$gt", index }, { "$lte", endIndex } } } }.ToString();
-                    //string fieldstr = new JObject() { { "state", 0 } }.ToString();
-                    string findstr = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } }  }, { "type", new JObject() { { "$ne", "MinerTransaction" } } } }.ToString();
-                    string fieldstr = new JObject() { { "vin", 1 }, { "vout", 1 }, { "blockindex", 1 }, { "txid", 1 } }.ToString();
-                    JArray queryRes = mh.GetDataWithField(remoteConn.connStr, remoteConn.connDB, utxoCol, fieldstr, findstr);
-                    if(queryRes == null || queryRes.Count == 0)
+                    //JToken[] jtArr = queryRes.Where(p => long.Parse(p["createHeight"].ToString()) == blockindex).ToArray();
+                    JToken[] jtArr = queryRes.Where(p => long.Parse(p["blockindex"].ToString()) == blockindex).ToArray();
+                    foreach (JToken jt in jtArr)
                     {
-                        updateRecord(endIndex);
-                        log(endIndex, remoteHeight);
-                        continue;
-                    }
-
-                    //long[] blockindexArr = queryRes.Select(p => long.Parse(p["createHeight"].ToString())).Distinct().ToArray();
-                    long[] blockindexArr = queryRes.Select(p => long.Parse(p["blockindex"].ToString())).Distinct().OrderBy(p => p).ToArray();
-                    
-                    foreach (long blockindex in blockindexArr)
-                    {
-                        //JToken[] jtArr = queryRes.Where(p => long.Parse(p["createHeight"].ToString()) == blockindex).ToArray();
-                        JToken[] jtArr = queryRes.Where(p => long.Parse(p["blockindex"].ToString()) == blockindex).ToArray();
-                        foreach (JToken jt in jtArr)
+                        if (jt["vin"] != null)
                         {
-                            if(jt["vin"] != null)
+                            foreach (JToken jvin in (JArray)jt["vin"])
                             {
-                                foreach (JToken jvin in (JArray)jt["vin"])
+                                string prevTxid = jvin["txid"].ToString();
+                                long prevIndex = long.Parse(jvin["vout"].ToString());
+                                findstr = new JObject() { { "txid", prevTxid }, { "n", prevIndex } }.ToString();
+                                if (mh.GetDataCount(localConn.connStr, localConn.connDB, cgasUtxoCol, findstr) > 0)
                                 {
-                                    string prevTxid = jvin["txid"].ToString();
-                                    long prevIndex = long.Parse(jvin["vout"].ToString());
-                                    findstr = new JObject() { { "txid", prevTxid }, { "n", prevIndex } }.ToString();
-                                    if (mh.GetDataCount(localConn.connStr, localConn.connDB, cgasUtxoCol, findstr) > 0)
-                                    {
-                                        mh.DeleteData(localConn.connStr, localConn.connDB, cgasUtxoCol, findstr);
-                                    }
+                                    mh.DeleteData(localConn.connStr, localConn.connDB, cgasUtxoCol, findstr);
                                 }
                             }
-                            if(jt["vout"] != null)
+                        }
+                        if (jt["vout"] != null)
+                        {
+                            foreach (JToken jvout in (JArray)jt["vout"])
                             {
-                                foreach(JToken jvout in (JArray)jt["vout"])
-                                    {
-                                    if (jvout["address"].ToString() != cgasAddress) continue;
-                                    string newData = new JObject()
+                                if (jvout["address"].ToString() != cgasAddress) continue;
+                                string newData = new JObject()
                                     {
                                         {"addr", jvout["address"] },
                                         {"txid", jt["txid"] },
@@ -139,22 +143,21 @@ namespace ContractNotifyCollector.contract.task
                                         {"lockAddress", "0" },
                                         {"lockHeight", 0 },
                                     }.ToString();
-                                    findstr = new JObject() { { "txid", jt["txid"] }, { "n", jvout["n"] } }.ToString();
-                                    if(mh.GetDataCount(localConn.connStr, localConn.connDB, cgasUtxoCol, findstr) <= 0)
-                                    {
-                                        mh.PutData(localConn.connStr, localConn.connDB, cgasUtxoCol, newData);
-                                    }
+                                findstr = new JObject() { { "txid", jt["txid"] }, { "n", jvout["n"] } }.ToString();
+                                if (mh.GetDataCount(localConn.connStr, localConn.connDB, cgasUtxoCol, findstr) <= 0)
+                                {
+                                    mh.PutData(localConn.connStr, localConn.connDB, cgasUtxoCol, newData);
                                 }
                             }
                         }
-
-                        //
-                        updateRecord(blockindex);
-                        log(blockindex, remoteHeight);
-
                     }
-                    
+
+                    //
+                    updateRecord(blockindex);
+                    log(blockindex, remoteHeight);
+
                 }
+
             }
         }
         private void updateState()

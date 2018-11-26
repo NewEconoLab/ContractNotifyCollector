@@ -2,6 +2,7 @@
 using Newtonsoft.Json.Linq;
 using System;
 using System.Linq;
+using System.Threading;
 
 namespace ContractNotifyCollector.core.task
 {
@@ -15,24 +16,6 @@ namespace ContractNotifyCollector.core.task
     /// </summary>
     class DomainCenterAnalyzer : ContractTask
     {
-        private JObject config;
-
-        public DomainCenterAnalyzer(string name):base(name)
-        {
-        }
-
-        public override void initConfig(JObject config)
-        {
-            this.config = config;
-            init();
-        }
-
-        public override void startTask()
-        {
-            run();
-        }
-
-
         private MongoDBHelper mh = new MongoDBHelper();
         private DbConnInfo localDbConnInfo;
         private DbConnInfo remoteDbConnInfo;
@@ -45,11 +28,15 @@ namespace ContractNotifyCollector.core.task
         private int batchInterval;
         private bool initSuccFlag = false;
 
-        private void init()
+        public DomainCenterAnalyzer(string name):base(name)
+        {
+        }
+
+        public override void initConfig(JObject config)
         {
             //JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name()).ToArray()[0]["taskInfo"];
             JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name() && p["taskNet"].ToString() == networkType()).ToArray()[0]["taskInfo"];
-            
+
             domainCenterCol = cfg["domainCenterCol"].ToString();
             domainResolverCol = cfg["domainResolverCol"].ToString();
             domainRecord = cfg["domainRecord"].ToString();
@@ -61,93 +48,105 @@ namespace ContractNotifyCollector.core.task
             // db info
             localDbConnInfo = Config.localDbConnInfo;
             remoteDbConnInfo = Config.notifyDbConnInfo;
-            //
             initSuccFlag = true;
         }
-        
-        private void run()
+
+        public override void startTask()
         {
             if (!initSuccFlag) return;
             while (true)
             {
-                ping();
-
-                // 本地高度
-                long domainCenterBlockindex = 0;
-                long domainResoverBlockindex = 0;
-                JObject domainFilter = new JObject() { { "$or", new JArray() { new JObject() { { "contractHash", domainCenterCol } }, new JObject() { { "contractHash", domainResolverCol } } } } };
-                JArray domainRes = mh.GetData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainRecord, domainFilter.ToString());
-                if (domainRes != null && domainRes.Count != 0)
+                try
                 {
-                    JToken j1 = domainRes.Where(p => p["contractHash"].ToString() == domainCenterCol).FirstOrDefault();
-                    JToken j2 = domainRes.Where(p => p["contractHash"].ToString() == domainResolverCol).FirstOrDefault();
-                    domainCenterBlockindex = j1 == null ? 0 : long.Parse(j1["blockindex"].ToString());
-                    domainResoverBlockindex = j2 == null ? 0 : long.Parse(j2["blockindex"].ToString());
+                    ping();
+                    process();
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.printEx(ex);
+                    Thread.Sleep(10 * 000);
+                    // continue
                 }
 
+            }
+        }
 
-                // 域名中心-远程高度
-                long maxDomainCenterBlockindex = 0;
-                long hasDomainCenterBlockindex = domainCenterBlockindex;
-                JArray arr = mh.GetDataPagesWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainCenterCol, new JObject() { { "blockindex", 1 } }.ToString(), 1, 1, new JObject() { { "blockindex", -1 } }.ToString());
-                if (arr != null && arr.Count() > 0)
-                {
-                    maxDomainCenterBlockindex = long.Parse(arr[0]["blockindex"].ToString());
-                }
-                for (long startIndex= hasDomainCenterBlockindex; startIndex<= maxDomainCenterBlockindex; startIndex+= batchSize)
-                {
-                    long nextIndex = startIndex + batchSize;
-                    long endIndex = nextIndex < maxDomainCenterBlockindex ? nextIndex : maxDomainCenterBlockindex;
-                    JArray andFilter = new JArray();
-                    andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$gte", startIndex } } } });
-                    andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$lte", endIndex } } } });
-                    andFilter.Add(new JObject() { { "owner", new JObject() { { "$ne",  nnsSellingAddr} } } });
-                    JObject domainCenterFilter = new JObject() { { "$and", andFilter } };
-                    JObject domainCenterField = new JObject() { { "state", 0 } };
-                    JArray domainCenterRes = mh.GetDataWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainCenterCol, domainCenterField.ToString(), domainCenterFilter.ToString());
-                    if (domainCenterRes != null && domainCenterRes.Count != 0)
-                    {
-                        processDomainCenter(domainCenterRes);
-                    }
-                    hasDomainCenterBlockindex = endIndex;
-                    if(hasDomainCenterBlockindex != domainCenterBlockindex)
-                    {
-                        updateRecord(hasDomainCenterBlockindex, domainCenterCol);
-                    }
-                    log("domainCenter", hasDomainCenterBlockindex, maxDomainCenterBlockindex);
-                }
+        private void process()
+        {
+            // 本地高度
+            long domainCenterBlockindex = 0;
+            long domainResoverBlockindex = 0;
+            JObject domainFilter = new JObject() { { "$or", new JArray() { new JObject() { { "contractHash", domainCenterCol } }, new JObject() { { "contractHash", domainResolverCol } } } } };
+            JArray domainRes = mh.GetData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainRecord, domainFilter.ToString());
+            if (domainRes != null && domainRes.Count != 0)
+            {
+                JToken j1 = domainRes.Where(p => p["contractHash"].ToString() == domainCenterCol).FirstOrDefault();
+                JToken j2 = domainRes.Where(p => p["contractHash"].ToString() == domainResolverCol).FirstOrDefault();
+                domainCenterBlockindex = j1 == null ? 0 : long.Parse(j1["blockindex"].ToString());
+                domainResoverBlockindex = j2 == null ? 0 : long.Parse(j2["blockindex"].ToString());
+            }
 
 
-                // 解析器-远程高度
-                long maxDomainResoverBlockindex = 0;
-                long hasDomainResoverBlockindex = domainResoverBlockindex;
-                arr = mh.GetDataPagesWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainResolverCol, new JObject() { { "blockindex", 1 } }.ToString(), 1, 1, new JObject() { { "blockindex", -1 } }.ToString());
-                if (arr != null && arr.Count() > 0)
+            // 域名中心-远程高度
+            long maxDomainCenterBlockindex = 0;
+            long hasDomainCenterBlockindex = domainCenterBlockindex;
+            JArray arr = mh.GetDataPagesWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainCenterCol, new JObject() { { "blockindex", 1 } }.ToString(), 1, 1, new JObject() { { "blockindex", -1 } }.ToString());
+            if (arr != null && arr.Count() > 0)
+            {
+                maxDomainCenterBlockindex = long.Parse(arr[0]["blockindex"].ToString());
+            }
+            for (long startIndex = hasDomainCenterBlockindex; startIndex <= maxDomainCenterBlockindex; startIndex += batchSize)
+            {
+                long nextIndex = startIndex + batchSize;
+                long endIndex = nextIndex < maxDomainCenterBlockindex ? nextIndex : maxDomainCenterBlockindex;
+                JArray andFilter = new JArray();
+                andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$gte", startIndex } } } });
+                andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$lte", endIndex } } } });
+                andFilter.Add(new JObject() { { "owner", new JObject() { { "$ne", nnsSellingAddr } } } });
+                JObject domainCenterFilter = new JObject() { { "$and", andFilter } };
+                JObject domainCenterField = new JObject() { { "state", 0 } };
+                JArray domainCenterRes = mh.GetDataWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainCenterCol, domainCenterField.ToString(), domainCenterFilter.ToString());
+                if (domainCenterRes != null && domainCenterRes.Count != 0)
                 {
-                    maxDomainResoverBlockindex = long.Parse(arr[0]["blockindex"].ToString());
+                    processDomainCenter(domainCenterRes);
                 }
-                for (long startIndex= hasDomainResoverBlockindex; startIndex<= maxDomainResoverBlockindex; startIndex+= batchSize)
+                hasDomainCenterBlockindex = endIndex;
+                if (hasDomainCenterBlockindex != domainCenterBlockindex)
                 {
-                    long nextIndex = startIndex + batchSize;
-                    long endIndex = nextIndex < maxDomainResoverBlockindex ? nextIndex : maxDomainResoverBlockindex;
-                    JArray andFilter = new JArray();
-                    andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$gte", startIndex } } } });
-                    andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$lte", endIndex } } } });
-                    JObject domainCenterFilter = new JObject() { { "$and", andFilter } };
-                    domainCenterFilter.Add("protocol", "addr");
-                    JArray domainCenterRes = mh.GetData(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainResolverCol, domainCenterFilter.ToString());
-                    if (domainCenterRes != null && domainCenterRes.Count != 0)
-                    {
-                        procesDomainResolver(domainCenterRes);
-                    }
-                    hasDomainResoverBlockindex = endIndex;
-                    if(hasDomainResoverBlockindex != domainResoverBlockindex)
-                    {
-                        updateRecord(hasDomainResoverBlockindex, domainResolverCol);
-                    }
-                    log("domainResolver", hasDomainResoverBlockindex, maxDomainResoverBlockindex);
+                    updateRecord(hasDomainCenterBlockindex, domainCenterCol);
                 }
+                log("domainCenter", hasDomainCenterBlockindex, maxDomainCenterBlockindex);
+            }
 
+
+            // 解析器-远程高度
+            long maxDomainResoverBlockindex = 0;
+            long hasDomainResoverBlockindex = domainResoverBlockindex;
+            arr = mh.GetDataPagesWithField(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainResolverCol, new JObject() { { "blockindex", 1 } }.ToString(), 1, 1, new JObject() { { "blockindex", -1 } }.ToString());
+            if (arr != null && arr.Count() > 0)
+            {
+                maxDomainResoverBlockindex = long.Parse(arr[0]["blockindex"].ToString());
+            }
+            for (long startIndex = hasDomainResoverBlockindex; startIndex <= maxDomainResoverBlockindex; startIndex += batchSize)
+            {
+                long nextIndex = startIndex + batchSize;
+                long endIndex = nextIndex < maxDomainResoverBlockindex ? nextIndex : maxDomainResoverBlockindex;
+                JArray andFilter = new JArray();
+                andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$gte", startIndex } } } });
+                andFilter.Add(new JObject() { { "blockindex", new JObject() { { "$lte", endIndex } } } });
+                JObject domainCenterFilter = new JObject() { { "$and", andFilter } };
+                domainCenterFilter.Add("protocol", "addr");
+                JArray domainCenterRes = mh.GetData(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainResolverCol, domainCenterFilter.ToString());
+                if (domainCenterRes != null && domainCenterRes.Count != 0)
+                {
+                    procesDomainResolver(domainCenterRes);
+                }
+                hasDomainResoverBlockindex = endIndex;
+                if (hasDomainResoverBlockindex != domainResoverBlockindex)
+                {
+                    updateRecord(hasDomainResoverBlockindex, domainResolverCol);
+                }
+                log("domainResolver", hasDomainResoverBlockindex, maxDomainResoverBlockindex);
             }
         }
 

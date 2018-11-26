@@ -5,30 +5,13 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace ContractNotifyCollector.core.task
 {
     class DomainSellAnalyzer : ContractTask
     {
-        private JObject config;
         private MongoDBHelper mh = new MongoDBHelper();
-
-        public DomainSellAnalyzer(string name) : base(name)
-        {
-        }
-
-        public override void initConfig(JObject config)
-        {
-            this.config = config;
-            initConfig();
-        }
-
-        public override void startTask()
-        {
-            run();
-        }
-
-
         private DbConnInfo localDbConnInfo;
         private DbConnInfo remoteDbConnInfo;
         private DbConnInfo blockDbConnInfo;
@@ -37,16 +20,22 @@ namespace ContractNotifyCollector.core.task
         private string notifyRecordColl;
         private string notifyDomainSellColl;
         private string notifyDomainCenterColl;
-        private int batchSize { set; get; }
-        private int batchInterval { set; get; }
-        private string bonusAddress { get; set; }
-        private string bonusAddressColl { get; set; }
+        private int batchSize;
+        private int batchInterval;
+        private string bonusAddress;
+        private string bonusAddressColl;
         private bool initSuccFlag = false;
-        private void initConfig()
+        private bool hasCreateIndex = false;
+
+        public DomainSellAnalyzer(string name) : base(name)
+        {
+        }
+
+        public override void initConfig(JObject config)
         {
             //JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name()).ToArray()[0]["taskInfo"];
             JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name() && p["taskNet"].ToString() == networkType()).ToArray()[0]["taskInfo"];
-            
+
             auctionRecordColl = cfg["auctionRecordColl"].ToString();
             auctionStateColl = cfg["auctionStateColl"].ToString();
             notifyRecordColl = cfg["notifyRecordColl"].ToString();
@@ -61,137 +50,152 @@ namespace ContractNotifyCollector.core.task
 
             remoteDbConnInfo = Config.notifyDbConnInfo;
             blockDbConnInfo = Config.blockDbConnInfo;
-            //
             initSuccFlag = true;
         }
 
-        private void run()
+        public override void startTask()
         {
             if (!initSuccFlag) return;
             //clearCurAddprice();
-            bool hasCreateIndex = false;
             while (true)
             {
-                ping();
-
-                // 获取远程已同步高度
-                long remoteHeight = getRemoteHeight();
-
-                // 获取本地已处理高度
-                long localHeight = getLocalHeight();
-                
-                // 
-                if (remoteHeight <= localHeight)
+                try
                 {
-                    log(localHeight, remoteHeight);
-                    continue;
+                    ping();
+                    process();
                 }
-                
-                // 
-                for (long index = localHeight; index <= remoteHeight; index += batchSize)
+                catch (Exception ex)
                 {
-                    long nextIndex = index + batchSize;
-                    long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
-                    // 待处理数据
-                    JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gt", index },{ "$lte", endIndex } } } };
-                    JObject queryField = new JObject() { { "state", 0 } };
-                    JArray queryRes = getDataWithField(remoteDbConnInfo, notifyDomainSellColl, queryField.ToString(), queryFilter.ToString());
-                    if (queryRes == null || queryRes.Count() == 0)
-                    {
-                        updateDomainRecord(endIndex);
-                        log(endIndex, remoteHeight);
-                        continue;
-                    }
-                    // 高度时间列表
-                    long[] blockindexArr = queryRes.Select(item => long.Parse(item["blockindex"].ToString())).Distinct().OrderBy(p => p).ToArray();
-                    long[] blockindexArrs = new long[] { };
-                    blockindexArrs = blockindexArrs.Concat(queryRes.Select(item => long.Parse(item["blockindex"].ToString())).ToArray()).ToArray();
-                    JToken[] tmp = queryRes.Where(item => item["startBlockSelling"] != null && item["startBlockSelling"].ToString() != "").ToArray() ;
-                    if(tmp != null && tmp.Count() > 0)
-                    {
-                        blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["startBlockSelling"].ToString())).ToArray()).ToArray();
-                    }
-                    tmp = queryRes.Where(item => item["endBlock"] != null && item["endBlock"].ToString() != "").ToArray();
-                    if(tmp != null && tmp.Count() > 0)
-                    {
-                        blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["endBlock"].ToString())).ToArray()).ToArray();
-                    }
-                    tmp = queryRes.Where(item => item["lastBlock"] != null && item["lastBlock"].ToString() != "").ToArray();
-                    if (tmp != null && tmp.Count() > 0)
-                    {
-                        blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["lastBlock"].ToString())).ToArray()).ToArray();
-                    }
-                    blockindexArrs = blockindexArrs.Distinct().ToArray();
-                    Dictionary<string, long> blockindexDict = getBlockTimeByIndex(blockindexArrs.ToArray());
-                    Dictionary<string, string> blockindexDictFmt = blockindexDict.ToDictionary(key => key.Key, val => TimeHelper.toBlockindexTimeFmt(val.Value));
-                    
-                    //
-                    int cnt = blockindexArr.Count();
-                    for (int i = 0; i < cnt; ++i)
-                    {
-                        long blockindex = blockindexArr[i];
-                        long rblockindex = blockindex - 1;
-                        long rblocktime = blockindexDict.GetValueOrDefault(rblockindex+"");
-                        JToken[] res = queryRes.Where(p => int.Parse(p["blockindex"].ToString()) == blockindex).ToArray();
-                        JToken[] rr = null;
-                        rr = res.Where(p2 => p2["displayName"].ToString() == "startAuction").ToArray();
-                        if(rr != null && rr.Count() != 0)
-                        {
-                            updateR1(rr, blockindex, rblockindex, rblocktime);
-                        }
-                        rr = res.Where(p2 => p2["displayName"].ToString() == "changeAuctionState").ToArray();
-                        if (rr != null && rr.Count() != 0)
-                        {
-                            updateR2(rr, blockindex, blockindexDict);
-                        }
-                        rr = res.Where(p2 => p2["displayName"].ToString() == "assetManagement").ToArray();
-                        if (rr != null && rr.Count() != 0)
-                        {
-                            updateR3(rr, blockindex, blockindexDict);
-                        }
-                        rr = res.Where(p2 => p2["displayName"].ToString() == "raise").ToArray();
-                        if (rr != null && rr.Count() != 0)
-                        {
-                            updateR3_Raise(rr, blockindex, rblockindex, rblocktime);
-                        }
-                        rr = res.Where(p2 => p2["displayName"].ToString() == "bidSettlement").ToArray();
-                        if (rr != null && rr.Count() != 0)
-                        {
-                            updateR3_BidSettlement(rr, blockindex, rblockindex, rblocktime);
-                        }
-                        rr = res.Where(p2 => p2["displayName"].ToString() == "raiseEndsAuction").ToArray();
-                        if (rr != null && rr.Count() != 0)
-                        {
-                            updateR4(rr, blockindex, rblockindex, rblocktime);
-                        }
-                        rr = res.Where(p2 => p2["displayName"].ToString() == "collectDomain").ToArray();
-                        if (rr != null && rr.Count() != 0)
-                        {
-                            updateR5(rr, blockindex, rblockindex, rblocktime);
-                        }
-
-                        // 更新已处理累加
-                        updateCurAddprice();
-
-                        // 更新高度
-                        if (blockindex != localHeight)
-                        {
-                            updateDomainRecord(blockindex);
-                        }
-                        log(blockindex, remoteHeight);
-                    }
-
+                    LogHelper.printEx(ex);
+                    Thread.Sleep(10 * 000);
+                    // continue
                 }
-
-                // 
-                if (hasCreateIndex) continue;
-                mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'auctionId':1}", "i_auctionId");
-                mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'auctionState':1}", "i_auctionState");
-                mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'addwholist.address':1}", "i_addwholist_address");
-                hasCreateIndex = true;
             }
         }
         
+        private void process()
+        {
+            // 获取远程已同步高度
+            long remoteHeight = getRemoteHeight();
+            long blockHeight = getBlockHeight();
+            if (blockHeight < remoteHeight)
+            {
+                remoteHeight = blockHeight;
+            }
+
+            // 获取本地已处理高度
+            long localHeight = getLocalHeight();
+
+            // 
+            if (remoteHeight <= localHeight)
+            {
+                log(localHeight, remoteHeight);
+                return;
+            }
+
+            // 
+            for (long index = localHeight; index <= remoteHeight; index += batchSize)
+            {
+                long nextIndex = index + batchSize;
+                long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
+                // 待处理数据
+                JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } } };
+                JObject queryField = new JObject() { { "state", 0 } };
+                JArray queryRes = getDataWithField(remoteDbConnInfo, notifyDomainSellColl, queryField.ToString(), queryFilter.ToString());
+                if (queryRes == null || queryRes.Count() == 0)
+                {
+                    updateDomainRecord(endIndex);
+                    log(endIndex, remoteHeight);
+                    continue;
+                }
+                // 高度时间列表
+                long[] blockindexArr = queryRes.Select(item => long.Parse(item["blockindex"].ToString())).Distinct().OrderBy(p => p).ToArray();
+                long[] blockindexArrs = new long[] { };
+                blockindexArrs = blockindexArrs.Concat(queryRes.Select(item => long.Parse(item["blockindex"].ToString())).ToArray()).ToArray();
+                JToken[] tmp = queryRes.Where(item => item["startBlockSelling"] != null && item["startBlockSelling"].ToString() != "").ToArray();
+                if (tmp != null && tmp.Count() > 0)
+                {
+                    blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["startBlockSelling"].ToString())).ToArray()).ToArray();
+                }
+                tmp = queryRes.Where(item => item["endBlock"] != null && item["endBlock"].ToString() != "").ToArray();
+                if (tmp != null && tmp.Count() > 0)
+                {
+                    blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["endBlock"].ToString())).ToArray()).ToArray();
+                }
+                tmp = queryRes.Where(item => item["lastBlock"] != null && item["lastBlock"].ToString() != "").ToArray();
+                if (tmp != null && tmp.Count() > 0)
+                {
+                    blockindexArrs = blockindexArrs.Concat(tmp.Select(item => long.Parse(item["lastBlock"].ToString())).ToArray()).ToArray();
+                }
+                blockindexArrs = blockindexArrs.Distinct().ToArray();
+                Dictionary<string, long> blockindexDict = getBlockTimeByIndex(blockindexArrs.ToArray());
+                Dictionary<string, string> blockindexDictFmt = blockindexDict.ToDictionary(key => key.Key, val => TimeHelper.toBlockindexTimeFmt(val.Value));
+
+                //
+                int cnt = blockindexArr.Count();
+                for (int i = 0; i < cnt; ++i)
+                {
+                    long blockindex = blockindexArr[i];
+                    long rblockindex = blockindex - 1;
+                    long rblocktime = blockindexDict.GetValueOrDefault(rblockindex + "");
+                    JToken[] res = queryRes.Where(p => int.Parse(p["blockindex"].ToString()) == blockindex).ToArray();
+                    JToken[] rr = null;
+                    rr = res.Where(p2 => p2["displayName"].ToString() == "startAuction").ToArray();
+                    if (rr != null && rr.Count() != 0)
+                    {
+                        updateR1(rr, blockindex, rblockindex, rblocktime);
+                    }
+                    rr = res.Where(p2 => p2["displayName"].ToString() == "changeAuctionState").ToArray();
+                    if (rr != null && rr.Count() != 0)
+                    {
+                        updateR2(rr, blockindex, blockindexDict);
+                    }
+                    rr = res.Where(p2 => p2["displayName"].ToString() == "assetManagement").ToArray();
+                    if (rr != null && rr.Count() != 0)
+                    {
+                        updateR3(rr, blockindex, blockindexDict);
+                    }
+                    rr = res.Where(p2 => p2["displayName"].ToString() == "raise").ToArray();
+                    if (rr != null && rr.Count() != 0)
+                    {
+                        updateR3_Raise(rr, blockindex, rblockindex, rblocktime);
+                    }
+                    rr = res.Where(p2 => p2["displayName"].ToString() == "bidSettlement").ToArray();
+                    if (rr != null && rr.Count() != 0)
+                    {
+                        updateR3_BidSettlement(rr, blockindex, rblockindex, rblocktime);
+                    }
+                    rr = res.Where(p2 => p2["displayName"].ToString() == "raiseEndsAuction").ToArray();
+                    if (rr != null && rr.Count() != 0)
+                    {
+                        updateR4(rr, blockindex, rblockindex, rblocktime);
+                    }
+                    rr = res.Where(p2 => p2["displayName"].ToString() == "collectDomain").ToArray();
+                    if (rr != null && rr.Count() != 0)
+                    {
+                        updateR5(rr, blockindex, rblockindex, rblocktime);
+                    }
+
+                    // 更新已处理累加
+                    updateCurAddprice();
+
+                    // 更新高度
+                    if (blockindex != localHeight)
+                    {
+                        updateDomainRecord(blockindex);
+                    }
+                    log(blockindex, remoteHeight);
+                }
+
+            }
+
+            // 
+            if (hasCreateIndex) return;
+            mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'auctionId':1}", "i_auctionId");
+            mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'auctionState':1}", "i_auctionState");
+            mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'addwholist.address':1}", "i_addwholist_address");
+            hasCreateIndex = true;
+        }
 
         private void updateR1(JToken[] rr, long blockindex/*tx出块时间*/, long rblockindex/*业务判断时间*/, long rblocktime)
         {// startAuction
@@ -777,6 +781,12 @@ namespace ContractNotifyCollector.core.task
             {
                 replaceData(localDbConnInfo, auctionRecordColl, newdata, findstr);
             }
+        }
+        private long getBlockHeight()
+        {
+            string findStr = new JObject() { { "counter", "block" } }.ToString();
+            var query = mh.GetData(Config.blockDbConnInfo.connStr, Config.blockDbConnInfo.connDB, "system_counter", findStr);
+            return long.Parse(query[0]["lastBlockindex"].ToString());
         }
         private long getRemoteHeight()
         {

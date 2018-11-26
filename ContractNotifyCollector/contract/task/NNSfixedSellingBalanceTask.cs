@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace ContractNotifyCollector.contract.task
 {
@@ -23,7 +24,9 @@ namespace ContractNotifyCollector.contract.task
         private int batchInterval;
         private bool initSuccFlag = false;
 
-        public NNSfixedSellingBalanceTask(string name) : base(name) { }
+        public NNSfixedSellingBalanceTask(string name) : base(name)
+        {
+        }
 
         public override void initConfig(JObject config)
         {
@@ -52,9 +55,11 @@ namespace ContractNotifyCollector.contract.task
                 {
                     ping();
                     process();
-                } catch (Exception ex)
+                }
+                catch (Exception ex)
                 {
                     LogHelper.printEx(ex);
+                    Thread.Sleep(10 * 000);
                     // continue
                 }
             }
@@ -64,6 +69,11 @@ namespace ContractNotifyCollector.contract.task
         {
             // 获取远程已同步高度
             long remoteHeight = getRemoteHeight();
+            long blockHeight = getBlockHeight();
+            if (blockHeight < remoteHeight)
+            {
+                remoteHeight = blockHeight;
+            }
 
             // 获取本地已处理高度
             long localHeight = getLocalHeight();
@@ -291,16 +301,11 @@ namespace ContractNotifyCollector.contract.task
                 mh.ReplaceData(localConn.connStr, localConn.connDB, nnsFixedSellingBalanceRecordCol, newdata, findstr);
             }
         }
-
-        private long getLocalHeight()
+        private long getBlockHeight()
         {
-            string findStr = new JObject() { { "counter", "nnsFixedSellingBalance" } }.ToString();
-            JArray res = mh.GetData(localConn.connStr, localConn.connDB, nnsFixedSellingBalanceRecordCol, findStr);
-            if (res == null || res.Count == 0)
-            {
-                return 0;
-            }
-            return long.Parse(res[0]["lastBlockindex"].ToString());
+            string findStr = new JObject() { { "counter", "block" } }.ToString();
+            var query = mh.GetData(Config.blockDbConnInfo.connStr, Config.blockDbConnInfo.connDB, "system_counter", findStr);
+            return long.Parse(query[0]["lastBlockindex"].ToString());
         }
         private long getRemoteHeight()
         {
@@ -312,6 +317,17 @@ namespace ContractNotifyCollector.contract.task
             }
             return long.Parse(res[0]["lastBlockindex"].ToString());
         }
+        private long getLocalHeight()
+        {
+            string findStr = new JObject() { { "counter", "nnsFixedSellingBalance" } }.ToString();
+            JArray res = mh.GetData(localConn.connStr, localConn.connDB, nnsFixedSellingBalanceRecordCol, findStr);
+            if (res == null || res.Count == 0)
+            {
+                return 0;
+            }
+            return long.Parse(res[0]["lastBlockindex"].ToString());
+        }
+        
         private void log(long localHeight, long remoteHeight)
         {
             Console.WriteLine(DateTime.Now + string.Format(" {0}.self processed at {1}/{2}", name(), localHeight, remoteHeight));

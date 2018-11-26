@@ -16,21 +16,6 @@ namespace ContractNotifyCollector.core.task
     /// </summary>
     class ContractNotify : ContractTask
     {
-        private JObject config;
-        public ContractNotify(string name) : base(name)
-        {
-        }
-        public override void initConfig(JObject config)
-        {
-            this.config = config;
-            initConfig();
-        }
-
-        public override void startTask()
-        {
-            run();
-        }
-
         private MongoDBHelper mh = new MongoDBHelper();
         private DbConnInfo localConn;
         private DbConnInfo remoteConn;
@@ -42,17 +27,21 @@ namespace ContractNotifyCollector.core.task
         private int batchInterval;
         private bool initSuccFlag = false;
 
-        private void initConfig()
+        public ContractNotify(string name) : base(name)
+        {
+        }
+
+        public override void initConfig(JObject config)
         {
             string filename = config["TaskConfig"][name()].ToString();
             JObject subConfig = JObject.Parse(File.ReadAllText(filename));
-            if(subConfig["taskNet"].ToString() != networkType())
+            if (subConfig["taskNet"].ToString() != networkType())
             {
                 throw new Exception("NotFindConfig");
             }
 
             structDict = ((JArray)subConfig["taskList"]).ToDictionary(
-                k => getKey(k["contractHash"].ToString(), k["notifyDisplayName"].ToString()), 
+                k => getKey(k["contractHash"].ToString(), k["notifyDisplayName"].ToString()),
                 v => (JArray)v["notifyStructure"]);
             notifyCounterColl = subConfig["notifyCounterColl"].ToString();
             notifyColl = subConfig["notifyColl"].ToString();
@@ -63,7 +52,6 @@ namespace ContractNotifyCollector.core.task
             // db info
             localConn = Config.localDbConnInfo;
             remoteConn = Config.blockDbConnInfo;
-            //
             initSuccFlag = true;
         }
 
@@ -80,7 +68,7 @@ namespace ContractNotifyCollector.core.task
             return structDict.Keys.Any(p => p.StartsWith(contractHash));
         }
 
-        private void run()
+        public override void startTask()
         {
             if (!initSuccFlag) return;
             while (true)
@@ -93,12 +81,13 @@ namespace ContractNotifyCollector.core.task
                 catch (Exception ex)
                 {
                     LogHelper.printEx(ex);
-                    Thread.Sleep(10*000);
+                    Thread.Sleep(10 * 000);
+                    // continue
                 }
 
             }
         }
-
+        
         private void process()
         {
             // 获取远程已同步高度

@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace ContractNotifyCollector.contract.task
 {
@@ -14,22 +15,6 @@ namespace ContractNotifyCollector.contract.task
     {
         private JObject config;
         private MongoDBHelper mh = new MongoDBHelper();
-
-        public CGasBalanceTask(string name): base(name)
-        {
-        }
-
-        public override void initConfig(JObject config)
-        {
-            this.config = config;
-            initConfig();
-        }
-
-        public override void startTask()
-        {
-            run();
-        }
-
         private string contractRecordCol;
         private string cgasBalanceRecordCol;
         private string cgasBalanceStateCol;
@@ -37,7 +22,7 @@ namespace ContractNotifyCollector.contract.task
         private string cgasHash;
         private int batchInterval;
         private int batchSize;
-        
+
         private string[] registerAddrArr;
         private Dictionary<string, string> registerAddrDict;
         private JObject sgasFilter;
@@ -45,13 +30,18 @@ namespace ContractNotifyCollector.contract.task
         private DbConnInfo localConn;
         private DbConnInfo remoteConn;
         private bool initSuccFlag = false;
-        private void initConfig()
+
+        public CGasBalanceTask(string name): base(name)
+        {
+        }
+
+        public override void initConfig(JObject config)
         {
             JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name() && p["taskNet"].ToString() == networkType()).ToArray()[0]["taskInfo"];
             contractRecordCol = cfg["contractRecordCol"].ToString();
             cgasBalanceRecordCol = cfg["cgasBalanceRecordCol"].ToString();
             cgasBalanceStateCol = cfg["cgasBalanceStateCol"].ToString();
-            registerHashArr = ((JArray)cfg["registerHashArr"]).Select(p => p.ToString()).ToArray() ;
+            registerHashArr = ((JArray)cfg["registerHashArr"]).Select(p => p.ToString()).ToArray();
             cgasHash = cfg["cgasHash"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
@@ -59,12 +49,13 @@ namespace ContractNotifyCollector.contract.task
             registerAddrDict = toAddress(registerHashArr);
             registerAddrArr = registerAddrDict.Keys.ToArray();
             sgasFilter = new JObject() { { "$or", merge(new string[] { "to", "from" }, registerAddrArr) } };
-            
+
             //localConn = Config.notifyDbConnInfo;
             localConn = Config.localDbConnInfo;
             remoteConn = Config.notifyDbConnInfo;
             initSuccFlag = true;
         }
+
         private JArray merge(string[] keys, string[] vals)
         {
             JArray ja = new JArray();
@@ -77,139 +68,153 @@ namespace ContractNotifyCollector.contract.task
             }
             return ja;
         }
-        private void run()
+
+        public override void startTask()
         {
             if (!initSuccFlag) return;
             //
             reset();
             while (true)
             {
-                ping();
-
-                // 获取远程已同步高度
-                long remoteHeight =  getRemoteHeight();
-
-                // 获取本地已处理高度
-                long localHeight = getLocalHeight();
-
-                // 
-                if (remoteHeight <= localHeight)
+                try
                 {
-                    log(localHeight, remoteHeight);
-                    continue;
+                    ping();
+                    process();
                 }
-
-                for (long index = localHeight; index <= remoteHeight; index += batchSize)
+                catch (Exception ex)
                 {
-                    long nextIndex = index + batchSize;
-                    long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
+                    LogHelper.printEx(ex);
+                    Thread.Sleep(10 * 000);
+                    // continue
+                }
+            }
+        }
 
-                    /**
-                     * Cgas 计算充值/提取方式替换为Sell setMoneyIn/getMoneyBack方式
-                     * 
-                    // 获取Cgas充值、提取
-                    sgasFilter.Remove("blockindex");
-                    sgasFilter.Add("blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } });
-                    string findstr = sgasFilter.ToString();
-                    string fieldstr = new JObject() { { "state", 0 } }.ToString();
-                    JArray res = mh.GetDataWithField(remoteConn.connStr, remoteConn.connDB, cgasHash, fieldstr, findstr);
-                    if(1 ==1 && res != null && res.Count >0)
+        private void process()
+        {
+            // 获取远程已同步高度
+            long remoteHeight = getRemoteHeight();
+
+            // 获取本地已处理高度
+            long localHeight = getLocalHeight();
+
+            // 
+            if (remoteHeight <= localHeight)
+            {
+                log(localHeight, remoteHeight);
+                return;
+            }
+
+            for (long index = localHeight; index <= remoteHeight; index += batchSize)
+            {
+                long nextIndex = index + batchSize;
+                long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
+
+                /**
+                 * Cgas 计算充值/提取方式替换为Sell setMoneyIn/getMoneyBack方式
+                 * 
+                // 获取Cgas充值、提取
+                sgasFilter.Remove("blockindex");
+                sgasFilter.Add("blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } });
+                string findstr = sgasFilter.ToString();
+                string fieldstr = new JObject() { { "state", 0 } }.ToString();
+                JArray res = mh.GetDataWithField(remoteConn.connStr, remoteConn.connDB, cgasHash, fieldstr, findstr);
+                if(1 ==1 && res != null && res.Count >0)
+                {
+                    res.GroupBy(p => p["to"], (k, g) =>
                     {
-                        res.GroupBy(p => p["to"], (k, g) =>
+                        string to = k.ToString();
+                        g.GroupBy(cp => cp["from"], (ck, cg) =>
                         {
-                            string to = k.ToString();
-                            g.GroupBy(cp => cp["from"], (ck, cg) =>
+                            string from = ck.ToString();
+                            decimal value = cg.Sum(sp => decimal.Parse(sp["value"].ToString()));
+                            // 入库(充值+提取)
+                            if (registerAddrArr.Contains(to))
                             {
-                                string from = ck.ToString();
-                                decimal value = cg.Sum(sp => decimal.Parse(sp["value"].ToString()));
-                                // 入库(充值+提取)
-                                if (registerAddrArr.Contains(to))
-                                {
-                                    // 充值
-                                    string address = from;
-                                    string register = registerAddrDict.GetValueOrDefault(to);
-                                    addBalance(address, register, value);
+                                // 充值
+                                string address = from;
+                                string register = registerAddrDict.GetValueOrDefault(to);
+                                addBalance(address, register, value);
 
-                                } else if (registerAddrArr.Contains(from))
-                                {
-                                    // 提取
-                                    string address = to;
-                                    string register = registerAddrDict.GetValueOrDefault(from);
-                                    subBalance(address, register, value);
-                                } else
-                                {
-                                    // 其他注册器
-                                }
-                                return new JObject();
-                            }).ToArray();
-                            
+                            } else if (registerAddrArr.Contains(from))
+                            {
+                                // 提取
+                                string address = to;
+                                string register = registerAddrDict.GetValueOrDefault(from);
+                                subBalance(address, register, value);
+                            } else
+                            {
+                                // 其他注册器
+                            }
                             return new JObject();
                         }).ToArray();
-                    }
+                        
+                        return new JObject();
+                    }).ToArray();
+                }
 
-                    // 获取Sell加价、取回
-                    foreach(string reghash in registerHashArr)
+                // 获取Sell加价、取回
+                foreach(string reghash in registerHashArr)
+                {
+                    findstr = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } },{ "displayName", "assetManagement"} }.ToString();
+                    res = mh.GetData(remoteConn.connStr, remoteConn.connDB, reghash, findstr);
+                    if(res != null && res.Count > 0)
                     {
-                        findstr = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } },{ "displayName", "assetManagement"} }.ToString();
-                        res = mh.GetData(remoteConn.connStr, remoteConn.connDB, reghash, findstr);
-                        if(res != null && res.Count > 0)
+                        var r1 = res.Where(p => p["from"].ToString().Length == 34).GroupBy(rp => rp["from"], (rk, rg) => {
+
+                            string address = rk.ToString();
+                            decimal value = rg.Sum(sp => decimal.Parse(sp["value"].ToString()));
+                            // 入库(加价)
+                            //subBalance(address, reghash, value);
+                            return new {address, value };
+                        }).ToDictionary(k => k.address, v => v.value);
+                        foreach(var item in r1)
                         {
-                            var r1 = res.Where(p => p["from"].ToString().Length == 34).GroupBy(rp => rp["from"], (rk, rg) => {
+                            if (item.Value == 0) continue;
+                            subBalance(item.Key, reghash, item.Value);
+                        }
+                        var r2 = res.Where(p => p["to"].ToString().Length == 34).GroupBy(rp => rp["to"], (rk, rg) => {
 
-                                string address = rk.ToString();
-                                decimal value = rg.Sum(sp => decimal.Parse(sp["value"].ToString()));
-                                // 入库(加价)
-                                //subBalance(address, reghash, value);
-                                return new {address, value };
-                            }).ToDictionary(k => k.address, v => v.value);
-                            foreach(var item in r1)
-                            {
-                                if (item.Value == 0) continue;
-                                subBalance(item.Key, reghash, item.Value);
-                            }
-                            var r2 = res.Where(p => p["to"].ToString().Length == 34).GroupBy(rp => rp["to"], (rk, rg) => {
-
-                                string address = rk.ToString();
-                                decimal value = rg.Sum(sp => decimal.Parse(sp["value"].ToString()));
-                                // 入库(取回)
-                                //addBalance(address, reghash, value);
-                                return new { address, value };
-                            }).ToDictionary(k => k.address, v => v.value);
-                            foreach (var item in r2)
-                            {
-                                if (item.Value == 0) continue;
-                                addBalance(item.Key, reghash, item.Value);
-                            }
+                            string address = rk.ToString();
+                            decimal value = rg.Sum(sp => decimal.Parse(sp["value"].ToString()));
+                            // 入库(取回)
+                            //addBalance(address, reghash, value);
+                            return new { address, value };
+                        }).ToDictionary(k => k.address, v => v.value);
+                        foreach (var item in r2)
+                        {
+                            if (item.Value == 0) continue;
+                            addBalance(item.Key, reghash, item.Value);
                         }
                     }
-                    */
-                    string findstr = null;
-                    JArray res = null;
-                    foreach (string reghash in registerHashArr)
-                    {
-                        findstr = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } }, { "$or", new JArray(){
+                }
+                */
+                string findstr = null;
+                JArray res = null;
+                foreach (string reghash in registerHashArr)
+                {
+                    findstr = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } }, { "$or", new JArray(){
                             //new JObject(){{"displayName", "assetManagement"} },
                             new JObject(){{"displayName", "raise"} },
                             new JObject(){{"displayName", "bidSettlement" } },
                             new JObject(){{"displayName", "setMoneyIn"} },
                             new JObject(){{"displayName", "getMoneyBack"} }
                         } } }.ToString();
-                        res = mh.GetData(remoteConn.connStr, remoteConn.connDB, reghash, findstr);
-                        var
-                        jt = res.Where(p => p["displayName"].ToString() == "setMoneyIn").ToArray();
-                        processSetMoneyIn(jt, reghash);
-                        jt = res.Where(p => p["displayName"].ToString() == "raise").ToArray();
-                        processRaise(jt, reghash);
-                        jt = res.Where(p => p["displayName"].ToString() == "bidSettlement").ToArray();
-                        processBidSettlement(jt, reghash);
-                        jt = res.Where(p => p["displayName"].ToString() == "getMoneyBack").ToArray();
-                        processGetMoneyBack(jt, reghash);
-                    }
-
-                    confirm();
-                    updateRecord(endIndex);
-                    log(endIndex, remoteHeight);
+                    res = mh.GetData(remoteConn.connStr, remoteConn.connDB, reghash, findstr);
+                    var
+                    jt = res.Where(p => p["displayName"].ToString() == "setMoneyIn").ToArray();
+                    processSetMoneyIn(jt, reghash);
+                    jt = res.Where(p => p["displayName"].ToString() == "raise").ToArray();
+                    processRaise(jt, reghash);
+                    jt = res.Where(p => p["displayName"].ToString() == "bidSettlement").ToArray();
+                    processBidSettlement(jt, reghash);
+                    jt = res.Where(p => p["displayName"].ToString() == "getMoneyBack").ToArray();
+                    processGetMoneyBack(jt, reghash);
                 }
+
+                confirm();
+                updateRecord(endIndex);
+                log(endIndex, remoteHeight);
             }
         }
         private void processSetMoneyIn(JToken[] res, string reghash)
