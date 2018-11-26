@@ -103,7 +103,6 @@ namespace ContractNotifyCollector
 
         static void log(string ss)
         {
-            Console.WriteLine(DateTime.Now + " " + ss);
             LogHelper.debug(ss);
         }
     }

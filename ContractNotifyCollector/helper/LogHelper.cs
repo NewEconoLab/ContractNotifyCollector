@@ -77,7 +77,7 @@ namespace ContractNotifyCollector.helper
             warn("{0} failed, errMsg:{1}\n{2}\n{3}\n", new object[] { threadName, ex.Message, ex.GetType(), ex.StackTrace });
             if (flag)
             {
-                warn(threadName + " exit");
+                error(threadName + " exit");
             }
             else
             {
@@ -88,7 +88,7 @@ namespace ContractNotifyCollector.helper
         public static void ping(int interval, string name)
         {
             Thread.Sleep(interval);
-            debug(name + " is running...");
+            Console.WriteLine(name + " is running...");
         }
     }
 }
