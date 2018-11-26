@@ -22,7 +22,6 @@ namespace ContractNotifyCollector
         private static void InitTask()
         {
             Config.loadConfig("config.json");
-
             
             AddTask(new ContractNotify("ContractNotify"));
             //AddTask(new ContractCollector("ContractCollector"));
@@ -34,6 +33,7 @@ namespace ContractNotifyCollector
             AddTask(new CGasUtxoTask("CGasUtxoTask"));
             AddTask(new CGasBalanceTask("CGasBalanceTask"));
             AddTask(new CGasUtxoLockTask("CGasUtxoLockTask"));
+            AddTask(new NNSfixedSellingBalanceTask("NNSfixedSellingBalanceTask"));
         }
 
         /// <summary>
