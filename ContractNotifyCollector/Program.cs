@@ -21,8 +21,6 @@ namespace ContractNotifyCollector
         /// </summary>
         private static void InitTask()
         {
-            Config.loadConfig("config.json");
-            
             AddTask(new ContractNotify("ContractNotify"));
             //AddTask(new ContractCollector("ContractCollector"));
             AddTask(new DomainCenterAnalyzer("DomainCenterAnalyzer"));
@@ -67,6 +65,8 @@ namespace ContractNotifyCollector
         /// <param name="args"></param>
         static void Main(string[] args)
         {
+            Config.loadConfig("config.json");
+
             ProjectInfo.head();
             InitTask();
             StartTask();
