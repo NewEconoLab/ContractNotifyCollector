@@ -1,4 +1,7 @@
-﻿using System;
+﻿using log4net;
+using log4net.Config;
+using log4net.Repository;
+using System;
 using System.IO;
 using System.Threading;
 
@@ -10,8 +13,60 @@ namespace ContractNotifyCollector.helper
     /// </summary>
     class LogHelper
     {
-        private static string logfile = "error.log";
-        public static void printEx(Exception ex) 
+        private static string repositoryName;
+        private static ILog log;
+        public static void initLogger(string config)
+        {
+            ILoggerRepository repository = LogManager.CreateRepository("LogHelper");
+            XmlConfigurator.Configure(repository, new FileInfo(config));
+            repositoryName = repository.Name;
+            log = getLogger(typeof(LogHelper));
+        }
+
+        public static ILog getLogger(Type t)
+        {
+            return LogManager.GetLogger(repositoryName, t);
+        }
+
+        public static void debug(string fmt, object[] args = null)
+        {
+            if (args == null)
+            {
+                log.Debug(fmt);
+                return;
+            }
+            log.DebugFormat(fmt, args);
+        }
+        public static void warn(string fmt, object[] args = null)
+        {
+            if (args == null)
+            {
+                log.Warn(fmt);
+                return;
+            }
+            log.WarnFormat(fmt, args);
+        }
+        public static void error(string fmt, object[] args = null)
+        {
+            if (args == null)
+            {
+                log.Error(fmt);
+                return;
+            }
+            log.ErrorFormat(fmt, args);
+        }
+
+        public static void initThread(string name)
+        {
+            Thread.CurrentThread.Name = name + "_" + Thread.CurrentThread.ManagedThreadId;
+        }
+
+        public static void printLog(string fmt, object[] args = null)
+        {
+            debug(fmt, args);
+        }
+
+        public static void printEx(Exception ex, bool flag = false)
         {
             string threadName = Thread.CurrentThread.Name;
             Console.WriteLine(threadName + " failed, errMsg:" + ex.Message);
@@ -19,75 +74,21 @@ namespace ContractNotifyCollector.helper
             Console.WriteLine(ex.Message);
             Console.WriteLine(ex.StackTrace);
             Console.WriteLine();
-
-            PrintEx2File(threadName, ex);
-        }
-        
-        private static void PrintEx2File(string threadName, Exception ex)
-        {
-            using (FileStream fs = new FileStream(logfile, FileMode.Append, FileAccess.Write, FileShare.None))
-            using (StreamWriter w = new StreamWriter(fs))
+            warn("{0} failed, errMsg:{1}\n{2}\n{3}\n", new object[] { threadName, ex.Message, ex.GetType(), ex.StackTrace });
+            if (flag)
             {
-                PrintErrorLogs(w, threadName, ex);
+                warn(threadName + " exit");
             }
-        }
-        private static void PrintErrorLogs(StreamWriter writer, string threadName, Exception ex)
-        {
-            string nowtime = DateTime.Now.ToString() + " ["+ threadName + "]";
-            writer.WriteLine(nowtime + " " + "errinfo:");
-            writer.WriteLine(nowtime + " " + ex.GetType());
-            writer.WriteLine(nowtime + " " + ex.Message);
-            writer.WriteLine(nowtime + " " + ex.StackTrace);
-            if (ex is AggregateException ex2)
+            else
             {
-                foreach (Exception inner in ex2.InnerExceptions)
-                {
-                    writer.WriteLine();
-                    PrintErrorLogs(writer, threadName, inner);
-                }
+                warn(threadName + " continue");
             }
-            else if (ex.InnerException != null)
-            {
-                writer.WriteLine();
-                PrintErrorLogs(writer, threadName, ex.InnerException);
-            }
-        }
-        public static void printHeader(string[] ss)
-        {
-            if (File.Exists(logfile))
-            {
-                new FileInfo(logfile).MoveTo(logfile+"_bak"+DateTime.Now.ToFileTimeUtc());
-            }
-            using (FileStream fs = new FileStream(logfile, FileMode.Create, FileAccess.Write, FileShare.None))
-            using (StreamWriter sw = new StreamWriter(fs))
-            {
-                string nowtime = DateTime.Now.ToString() + " [" + "main" + "]";
-                foreach(string s in ss)
-                {
-                    sw.WriteLine(nowtime + " " + s);
-                }
-            }
-        }
-        public static void printLog(string ss)
-        {
-            Console.WriteLine(DateTime.Now + " " + ss);
-            using (FileStream fs = new FileStream(logfile, FileMode.Append, FileAccess.Write, FileShare.None))
-            using (StreamWriter sw = new StreamWriter(fs))
-            {
-                sw.WriteLine(DateTime.Now + " " + ss);
-            }
-        }
-
-        public static void initThread(string name)
-        {
-            Thread.CurrentThread.Name = name + Thread.CurrentThread.ManagedThreadId;
         }
 
         public static void ping(int interval, string name)
         {
             Thread.Sleep(interval);
-            Console.WriteLine(DateTime.Now + " " + name + " is running...");
+            debug(name + " is running...");
         }
-
     }
 }

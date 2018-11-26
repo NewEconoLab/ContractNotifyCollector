@@ -13,7 +13,6 @@ namespace ContractNotifyCollector.contract.task
 {
     class CGasBalanceTask : ContractTask
     {
-        private JObject config;
         private MongoDBHelper mh = new MongoDBHelper();
         private string contractRecordCol;
         private string cgasBalanceRecordCol;
