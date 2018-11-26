@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using ContractNotifyCollector.helper;
+using Newtonsoft.Json.Linq;
 using System.IO;
 using System.Linq;
 
@@ -18,6 +19,7 @@ namespace ContractNotifyCollector
         }
         public static void loadConfig(string filename)
         {
+            LogHelper.initLogger("log4net.config");
             if(config == null)
             {
                 config = JObject.Parse(File.ReadAllText(filename));
