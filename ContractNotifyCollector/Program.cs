@@ -32,6 +32,7 @@ namespace ContractNotifyCollector
             AddTask(new CGasBalanceTask("CGasBalanceTask"));
             AddTask(new CGasUtxoLockTask("CGasUtxoLockTask"));
             AddTask(new NNSfixedSellingBalanceTask("NNSfixedSellingBalanceTask"));
+            AddTask(new NNSfixedSellingStateTask("NNSfixedSellingStateTask"));
         }
 
         /// <summary>
