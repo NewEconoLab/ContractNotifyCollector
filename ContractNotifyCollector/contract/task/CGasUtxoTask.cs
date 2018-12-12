@@ -24,6 +24,7 @@ namespace ContractNotifyCollector.contract.task
         private int batchSize;
         private int batchInterval;
         private bool hasInitSuccess = false;
+        private bool hasCreateIndex = false;
 
         public CGasUtxoTask(string name) : base(name)
         {
@@ -41,9 +42,9 @@ namespace ContractNotifyCollector.contract.task
             expireRange = int.Parse(cfg["expireRange"].ToString());
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
-
+            
+            localConn = Config.localDbConnInfo;
             remoteConn = Config.blockDbConnInfo;
-            localConn = Config.notifyDbConnInfo;
             hasInitSuccess = true;
         }
 
@@ -159,6 +160,14 @@ namespace ContractNotifyCollector.contract.task
                 }
 
             }
+
+
+            // 添加索引
+            if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, cgasUtxoCol, "{'txid':1,'n':1}", "i_txid_n");
+            mh.setIndex(localConn.connStr, localConn.connDB, cgasUtxoCol, "{'markAddress':1}", "i_markAddress");
+            mh.setIndex(localConn.connStr, localConn.connDB, cgasUtxoCol, "{'markAddress':1, 'lockAddress':1}", "i_markAddress_lockAddress");
+            hasCreateIndex = true;
         }
         private void updateState()
         {

@@ -36,8 +36,8 @@ namespace ContractNotifyCollector.contract.task
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
             //
+            localConn = Config.localDbConnInfo;
             remoteConn = Config.notifyDbConnInfo;
-            localConn = Config.notifyDbConnInfo;
             hasInitSuccess = true;
         }
 

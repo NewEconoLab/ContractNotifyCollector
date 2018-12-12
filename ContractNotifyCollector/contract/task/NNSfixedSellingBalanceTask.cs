@@ -23,6 +23,7 @@ namespace ContractNotifyCollector.contract.task
         private int batchSize;
         private int batchInterval;
         private bool initSuccFlag = false;
+        private bool hasCreateIndex = false;
 
         public NNSfixedSellingBalanceTask(string name) : base(name)
         {
@@ -40,7 +41,6 @@ namespace ContractNotifyCollector.contract.task
 
             //
             localConn = Config.localDbConnInfo;
-            localConn = Config.notifyDbConnInfo;
             remoteConn = Config.notifyDbConnInfo;
             initSuccFlag = true;
         }
@@ -115,6 +115,12 @@ namespace ContractNotifyCollector.contract.task
                 log(endIndex, remoteHeight);
 
             }
+
+            // 添加索引
+            if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, nnsFixedSellingBalanceStateCol, "{'address':1}", "i_address");
+            mh.setIndex(localConn.connStr, localConn.connDB, nnsFixedSellingBalanceStateCol, "{'address':1,'register':1}", "i_address_register");
+            hasCreateIndex = true;
         }
 
         private void processSetMoneyIn(JToken[] jt, string sellinghash)

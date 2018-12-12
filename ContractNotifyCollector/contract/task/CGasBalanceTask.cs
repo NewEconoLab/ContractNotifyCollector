@@ -29,6 +29,7 @@ namespace ContractNotifyCollector.contract.task
         private DbConnInfo localConn;
         private DbConnInfo remoteConn;
         private bool initSuccFlag = false;
+        private bool hasCreateIndex = false;
 
         public CGasBalanceTask(string name): base(name)
         {
@@ -48,8 +49,7 @@ namespace ContractNotifyCollector.contract.task
             registerAddrDict = toAddress(registerHashArr);
             registerAddrArr = registerAddrDict.Keys.ToArray();
             sgasFilter = new JObject() { { "$or", merge(new string[] { "to", "from" }, registerAddrArr) } };
-
-            //localConn = Config.notifyDbConnInfo;
+            
             localConn = Config.localDbConnInfo;
             remoteConn = Config.notifyDbConnInfo;
             initSuccFlag = true;
@@ -215,6 +215,12 @@ namespace ContractNotifyCollector.contract.task
                 updateRecord(endIndex);
                 log(endIndex, remoteHeight);
             }
+
+            // 添加索引
+            if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, cgasBalanceStateCol, "{'address':1}", "i_address");
+            mh.setIndex(localConn.connStr, localConn.connDB, cgasBalanceStateCol, "{'address':1,'register':1}", "i_address_register");
+            hasCreateIndex = true;
         }
         private void processSetMoneyIn(JToken[] res, string reghash)
         {

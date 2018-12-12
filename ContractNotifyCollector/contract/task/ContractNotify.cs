@@ -26,6 +26,7 @@ namespace ContractNotifyCollector.core.task
         private int batchSize;
         private int batchInterval;
         private bool initSuccFlag = false;
+        private List<string> hasCreateIndex = new List<string>();
 
         public ContractNotify(string name) : base(name)
         {
@@ -154,34 +155,33 @@ namespace ContractNotifyCollector.core.task
                     }
 
                     // 入库==>分组(分表)
-                    list.GroupBy(p => p["contractHash"], (k, g) =>
+                    var notifySet = list.GroupBy(p => p["contractHash"], (k, g) => new { hash = k.ToString(), sets = g.ToArray() } ).ToArray();
+                    foreach(var item in notifySet)
                     {
-                        string contractHash = k.ToString();
+                        string contractHash = item.hash;
                         long count = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, new JObject() { { "blockindex", blockindex } }.ToString());
-                        if (count <= 0)
+                        if(count <=0)
                         {
-                            mh.setIndex(localConn.connStr, localConn.connDB, contractHash, "{'blockindex':1,'txid':1,'n':1}", "i_blockindex_txid_n");
-                            long cnt = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, new JObject() { { "blockindex", blockindex } }.ToString());
-                            if (cnt <= 0)
+                            mh.PutData(localConn.connStr, localConn.connDB, contractHash, new JArray() { item.sets });
+                        } else
+                        {
+                            foreach(var subItem in item.sets)
                             {
-                                mh.PutData(localConn.connStr, localConn.connDB, contractHash, new JArray() { g });
-                            }
-                            else
-                            {
-                                g.Select(pk =>
+                                string findstr = new JObject() { { "txid", subItem["txid"] }, { "n", subItem["n"] }, { "displayName", subItem["displayName"] } }.ToString();
+                                long cnt2 = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, findstr);
+                                if (cnt2 <= 0)
                                 {
-                                    string findstr = new JObject() { { "txid", pk["txid"] }, { "n", pk["n"] }, { "displayName", pk["displayName"] } }.ToString();
-                                    long cnt2 = mh.GetDataCount(localConn.connStr, localConn.connDB, contractHash, findstr);
-                                    if (cnt2 <= 0)
-                                    {
-                                        mh.PutData(localConn.connStr, localConn.connDB, contractHash, pk);
-                                    }
-                                    return pk;
-                                }).ToArray();
+                                    mh.PutData(localConn.connStr, localConn.connDB, contractHash, subItem);
+                                }
                             }
                         }
-                        return new JArray();
-                    }).ToArray(); ;
+                        // 添加索引
+                        if (hasCreateIndex.Contains(contractHash)) continue;
+                        mh.setIndex(localConn.connStr, localConn.connDB, contractHash, "{'blockindex':1,'txid':1,'n':1}", "i_blockindex_txid_n");
+                        mh.setIndex(localConn.connStr, localConn.connDB, contractHash, "{'blockindex':1}", "i_blockindex");
+                        hasCreateIndex.Add(contractHash);
+                    }
+
                     // 更新高度
                     updateLocalRecord(blockindex);
                     log(blockindex, remoteHeight);
@@ -198,11 +198,19 @@ namespace ContractNotifyCollector.core.task
             foreach (JObject notification in notifications)
             {
                 string contractHash = notification["contract"].ToString();
-                if (!hasKey(contractHash)) continue;
+                if (!hasKey(contractHash))
+                {
+                    ++n;
+                    continue;
+                }
                 JArray JAstate = (JArray)notification["state"]["value"];
                 string displayName = JAstate[0]["value"].ToString().Hexstring2String();
                 JArray notifyStruct = getVal(contractHash, displayName);
-                if (notifyStruct == null || notifyStruct.Count == 0) continue;
+                if (notifyStruct == null || notifyStruct.Count == 0)
+                {
+                    ++n;
+                    continue;
+                }
                 // 索引信息
                 JObject notifyInfo = new JObject();
                 notifyInfo.Add("blockindex", blockindex);

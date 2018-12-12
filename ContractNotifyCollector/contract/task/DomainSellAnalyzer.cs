@@ -47,7 +47,6 @@ namespace ContractNotifyCollector.core.task
 
             // db info
             localDbConnInfo = Config.localDbConnInfo;
-
             remoteDbConnInfo = Config.notifyDbConnInfo;
             blockDbConnInfo = Config.blockDbConnInfo;
             initSuccFlag = true;
@@ -194,6 +193,7 @@ namespace ContractNotifyCollector.core.task
             mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'auctionId':1}", "i_auctionId");
             mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'auctionState':1}", "i_auctionState");
             mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'addwholist.address':1}", "i_addwholist_address");
+            mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, auctionStateColl, "{'fulldomain':1}", "i_fulldomain");
             hasCreateIndex = true;
         }
 

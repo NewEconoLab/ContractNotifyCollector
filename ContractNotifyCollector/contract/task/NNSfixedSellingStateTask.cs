@@ -23,6 +23,7 @@ namespace ContractNotifyCollector.contract.task
         private int batchSize;
         private int batchInterval;
         private bool initSuccFlag = false;
+        private bool hasCreateIndex = false;
 
         public NNSfixedSellingStateTask(string name): base(name)
         {
@@ -40,7 +41,6 @@ namespace ContractNotifyCollector.contract.task
 
             //
             localConn = Config.localDbConnInfo;
-            localConn = Config.notifyDbConnInfo;
             remoteConn = Config.notifyDbConnInfo;
             blockConn = Config.blockDbConnInfo;
             initSuccFlag = true;
@@ -168,6 +168,15 @@ namespace ContractNotifyCollector.contract.task
                 updateRecord(endIndex);
                 log(endIndex, remoteHeight);
             }
+
+            // 添加索引
+            if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, nnsFixedSellingStateCol, "{'fullDomain':1}", "i_fullDomain");
+            mh.setIndex(localConn.connStr, localConn.connDB, nnsFixedSellingStateCol, "{'seller':1}", "i_seller");
+            mh.setIndex(localConn.connStr, localConn.connDB, nnsFixedSellingStateCol, "{'seller':1,'displayName':1}", "i_seller_displayName");
+            mh.setIndex(localConn.connStr, localConn.connDB, nnsFixedSellingStateCol, "{'owner':1}", "i_owner");
+            mh.setIndex(localConn.connStr, localConn.connDB, nnsFixedSellingStateCol, "{'owner':1,'displayName':1}", "i_owner_displayName");
+            hasCreateIndex = true;
         }
 
         private Dictionary<string, JObject> getDomainOwner(string[] fullhashArr)
