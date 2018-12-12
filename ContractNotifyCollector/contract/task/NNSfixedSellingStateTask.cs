@@ -115,7 +115,9 @@ namespace ContractNotifyCollector.contract.task
                 var namehashArr = res.Select(p => p["fullHash"].ToString()).Distinct().ToArray();
                 var namehashDict = getDomainOwner(namehashArr);
 
-                res.ForEach(pf => {
+                foreach(var pf in res) { 
+                //res.ForEach(pf => {
+
                     JObject jo = (JObject)pf;
 
                     long blockindex = long.Parse(jo["blockindex"].ToString());
@@ -160,7 +162,8 @@ namespace ContractNotifyCollector.contract.task
                         }
                     }
                     */
-                });
+                    //});
+                }
                 //
                 updateRecord(endIndex);
                 log(endIndex, remoteHeight);
