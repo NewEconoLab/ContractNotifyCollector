@@ -86,6 +86,7 @@ namespace ContractNotifyCollector.core.task
             if (remoteHeight <= localHeight)
             {
                 log(localHeight, remoteHeight);
+                processDomainFixSelling();
                 return;
             }
 
@@ -121,7 +122,7 @@ namespace ContractNotifyCollector.core.task
             mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, domainOwnerCol, "{'owner':1}", "i_owner");
             mh.setIndex(localDbConnInfo.connStr, localDbConnInfo.connDB, domainOwnerCol, "{'domain':1,'parenthash':1}", "i_domain_parenthash");
             hasCreateIndex = true;
-
+            processDomainFixSelling();
         }
         
         private void processDomainCenter(JArray domainCenterRes)
@@ -197,6 +198,76 @@ namespace ContractNotifyCollector.core.task
 
         }
         
+        private void processDomainFixSelling()
+        {
+            // remote
+            long fixedSellingHeight = 0;
+            string findstr = new JObject() { { "counter", "nnsFixedSellingState" } }.ToString();
+            JArray res = mh.GetData(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, "nnsFixedSellingRecord", findstr);
+            if (res != null && res.Count() > 0)
+            {
+                fixedSellingHeight = long.Parse(Convert.ToString(res.OrderBy(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
+            }
+
+            // local
+            long domainSellingHeight = 0;
+            res = mh.GetData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainRecord, findstr);
+            if (res != null && res.Count() > 0)
+            {
+                domainSellingHeight = long.Parse(Convert.ToString(res.OrderBy(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
+            }
+            if (fixedSellingHeight == 0 || domainSellingHeight >= fixedSellingHeight)
+            {
+                Console.WriteLine(DateTime.Now + string.Format(" {0}.fixedSelling.self processed at {1}/{2}", name(), fixedSellingHeight, fixedSellingHeight));
+                return;
+            }
+
+            // data
+            findstr = new JObject() { {"blockindex", new JObject() { {"$gt", domainSellingHeight }, { "$lte", fixedSellingHeight} } } }.ToString();
+            res = mh.GetData(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, "nnsFixedSellingState", findstr);
+            if(res != null && res.Count() > 0)
+            {
+                var fixedRes =
+                    res.GroupBy(p => p["fullHash"].ToString(), (k, g) =>
+                    {
+                        return g.OrderByDescending(pg => long.Parse(pg["blockindex"].ToString())).First();
+                    }).ToArray();
+                foreach (var fixedItem in fixedRes)
+                {
+                    string fullHash = fixedItem["fullHash"].ToString();
+                    var seller = fixedItem["seller"];
+                    var price = fixedItem["price"];
+                    var launchTime = fixedItem["launchTime"];
+                    var displayName = fixedItem["displayName"];
+
+                    findstr = new JObject() { { "namehash", fullHash } }.ToString();
+                    string updateStr = new JObject() { {"$set", new JObject() {
+                    { "type", displayName},
+                    { "seller", seller},
+                    { "price", price},
+                    { "launchTime", launchTime},
+                } } }.ToString();
+                    mh.UpdateData(localDbConnInfo.connStr, localDbConnInfo.connDB, "domainOwnerCol", updateStr, findstr);
+                }
+            }
+
+            // update
+            findstr = new JObject() { { "counter", "nnsFixedSellingState" } }.ToString();
+            string newdata = new JObject() { { "counter", "nnsFixedSellingState" }, { "lastBlockindex", fixedSellingHeight } }.ToString();
+            long cnt = mh.GetDataCount(localDbConnInfo.connStr, localDbConnInfo.connDB, domainRecord, findstr);
+            if (cnt <= 0)
+            {
+                mh.PutData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainRecord, newdata);
+            }
+            else
+            {
+                mh.ReplaceData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainRecord, newdata, findstr);
+            }
+
+            // log
+            Console.WriteLine(DateTime.Now + string.Format(" {0}.fixedSelling.self processed at {1}/{2}", name(), fixedSellingHeight, fixedSellingHeight));
+
+        }
         private void updateRecord(long maxBlockindex)
         {
             string newdata = new JObject() { { "counter", domainOwnerCol }, { "lastBlockindex", maxBlockindex } }.ToString();
@@ -225,7 +296,7 @@ namespace ContractNotifyCollector.core.task
         private long getLocalHeight()
         {
             string findstr = new JObject() { { "counter", domainOwnerCol } }.ToString();
-            JArray res = mh.GetData(remoteDbConnInfo.connStr, remoteDbConnInfo.connDB, domainRecord, findstr);
+            JArray res = mh.GetData(localDbConnInfo.connStr, localDbConnInfo.connDB, domainRecord, findstr);
             if (res == null || res.Count == 0)
             {
                 return 0;
