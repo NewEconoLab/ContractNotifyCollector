@@ -15,7 +15,6 @@ namespace ContractNotifyCollector.contract.task
         private MongoDBHelper mh = new MongoDBHelper();
         private DbConnInfo localConn;
         private DbConnInfo remoteConn;
-        private DbConnInfo blockConn;
         private string nnsDomainCreditRecordColl;
         private string nnsDomainCreditStateColl;
         private string remoteConnRecordColl;
@@ -138,7 +137,7 @@ namespace ContractNotifyCollector.contract.task
                 long ttl = long.Parse(item["ttl"].ToString());
                 string txid = item["txid"].ToString();
                 
-                string findStr = new JObject() { {"fulldomain", fulldomain } }.ToString();
+                string findStr = new JObject() { {"address", addr } }.ToString();
                 var queryRes = mh.GetData<DomainCreditStateInfo>(localConn.connStr, localConn.connDB, nnsDomainCreditStateColl, findStr);
                 if(queryRes == null || queryRes.Count == 0)
                 {
