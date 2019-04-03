@@ -41,7 +41,7 @@ namespace ContractNotifyCollector.core.task
                 throw new Exception("NotFindConfig");
             }
 
-            structDict = ((JArray)subConfig["taskList"]).ToDictionary(
+            structDict = ((JArray)subConfig["taskList"]).Where(p => p["netType"].ToString() == networkType()).ToDictionary(
                 k => getKey(k["contractHash"].ToString(), k["notifyDisplayName"].ToString()),
                 v => (JArray)v["notifyStructure"]);
             notifyCounterColl = subConfig["notifyCounterColl"].ToString();

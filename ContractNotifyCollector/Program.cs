@@ -33,6 +33,7 @@ namespace ContractNotifyCollector
             AddTask(new CGasUtxoLockTask("CGasUtxoLockTask"));
             AddTask(new NNSfixedSellingBalanceTask("NNSfixedSellingBalanceTask"));
             AddTask(new NNSfixedSellingStateTask("NNSfixedSellingStateTask"));
+            AddTask(new DomainCreditTask("DomainCreditTask"));
         }
 
         /// <summary>
