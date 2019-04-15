@@ -3,9 +3,7 @@ using ContractNotifyCollector.helper;
 using MongoDB.Bson.Serialization.Attributes;
 using Newtonsoft.Json.Linq;
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
 
 namespace ContractNotifyCollector.contract.task
@@ -62,7 +60,7 @@ namespace ContractNotifyCollector.contract.task
                 }
             }
         }
-
+        
         private void process()
         {
             long remoteHeight = getRemoteHeight();
@@ -102,7 +100,7 @@ namespace ContractNotifyCollector.contract.task
                     {
                         processAddrCreditRevoke(r2, blockindex);
                     }
-
+                    
                     updateRecord(blockindex);
                     log(blockindex, remoteHeight);
                 }

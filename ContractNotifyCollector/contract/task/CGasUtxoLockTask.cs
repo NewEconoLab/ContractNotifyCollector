@@ -69,6 +69,9 @@ namespace ContractNotifyCollector.contract.task
             long localHeight = getLocalHeight();
 
             // 
+            long utxoHeight = getUtxoHeight();
+            if (remoteHeight > utxoHeight) remoteHeight = utxoHeight;
+
             if (remoteHeight <= localHeight)
             {
                 log(localHeight, remoteHeight);
@@ -134,6 +137,16 @@ namespace ContractNotifyCollector.contract.task
             {
                 mh.ReplaceData(localConn.connStr, localConn.connDB, cgasUtxoCounterCol, newdata, findstr);
             }
+        }
+        private long getUtxoHeight()
+        {
+            string findstr = new JObject() { { "counter", "tx" } }.ToString();
+            JArray res = mh.GetData(localConn.connStr, localConn.connDB, cgasUtxoCounterCol, findstr);
+            if (res == null || res.Count == 0)
+            {
+                return 0;
+            }
+            return long.Parse(res[0]["lastBlockindex"].ToString());
         }
         private long getLocalHeight()
         {

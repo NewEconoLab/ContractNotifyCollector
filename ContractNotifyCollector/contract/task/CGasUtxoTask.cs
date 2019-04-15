@@ -206,7 +206,7 @@ namespace ContractNotifyCollector.contract.task
         }
         private long getRemoteHeight()
         {
-            string findstr = new JObject() { { "counter", "block" } }.ToString();
+            string findstr = new JObject() { { "counter", "tx" } }.ToString();
             JArray res = mh.GetData(remoteConn.connStr, remoteConn.connDB, utxoCounterCol, findstr);
             if (res == null || res.Count == 0)
             {
