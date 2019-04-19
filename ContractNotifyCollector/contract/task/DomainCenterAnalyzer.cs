@@ -149,6 +149,7 @@ namespace ContractNotifyCollector.core.task
 
                 updateRecord(endIndex);
                 log(endIndex, remoteHeight);
+                if (!hasCreateIndex) break ;
             }
 
             // 添加索引
