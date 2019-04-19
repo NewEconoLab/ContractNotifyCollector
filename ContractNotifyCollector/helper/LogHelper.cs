@@ -88,7 +88,7 @@ namespace ContractNotifyCollector.helper
         public static void ping(int interval, string name)
         {
             Thread.Sleep(interval);
-            Console.WriteLine(name + " is running...");
+            //Console.WriteLine(name + " is running...");
         }
     }
 }
