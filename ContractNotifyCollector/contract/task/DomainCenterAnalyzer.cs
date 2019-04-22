@@ -169,6 +169,10 @@ namespace ContractNotifyCollector.core.task
             {
                 string namehash = item.namehash;
                 JObject jo = (JObject)item.item;
+                long ttl = long.Parse(jo["TTL"].ToString());
+                jo.Remove("TTL");
+                jo.Add("TTL", ttl);
+
                 string findStr = new JObject() { {"namehash", namehash } }.ToString();
                 long cnt = mh.GetDataCount(localConn.connStr, localConn.connDB, domainOwnerCol, findStr);
                 if (cnt > 0)
@@ -197,10 +201,6 @@ namespace ContractNotifyCollector.core.task
                 }
                 else
                 {
-                    long ttl = long.Parse(jo["TTL"].ToString());
-                    jo.Remove("TTL");
-                    jo.Add("TTL", ttl);
-
                     string parenthash = jo["parenthash"].ToString();
                     if (jo["root"].ToString() == "0" && parenthash != "")
                     {
