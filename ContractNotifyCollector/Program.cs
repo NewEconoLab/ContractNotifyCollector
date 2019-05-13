@@ -34,6 +34,7 @@ namespace ContractNotifyCollector
             AddTask(new NNSfixedSellingBalanceTask("NNSfixedSellingBalanceTask"));
             AddTask(new NNSfixedSellingStateTask("NNSfixedSellingStateTask"));
             AddTask(new DomainCreditTask("DomainCreditTask"));
+            AddTask(new DexBalanceTask("DexBalanceTask"));
         }
 
         /// <summary>

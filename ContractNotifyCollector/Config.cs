@@ -32,6 +32,8 @@ namespace ContractNotifyCollector
         public static DbConnInfo localDbConnInfo;
         public static DbConnInfo blockDbConnInfo;
         public static DbConnInfo notifyDbConnInfo;
+        public static string nelApiUrl;
+        public static bool fromApiFlag;
         private static void initDb()
         {
             string startNetType = config["startNetType"].ToString();
@@ -40,6 +42,9 @@ namespace ContractNotifyCollector
             localDbConnInfo = getDbConnInfo(connInfo, 2);
             blockDbConnInfo = getDbConnInfo(connInfo, 3);
             notifyDbConnInfo = getDbConnInfo(connInfo, 4);
+            nelApiUrl = connInfo["NELApiUrl"].ToString();
+            string flag = connInfo["fromApiFlag"].ToString();
+            fromApiFlag = (flag == "1" || flag.ToLower() == "true");
         }
         private static DbConnInfo getDbConnInfo(JToken conn, int flag)
         {
