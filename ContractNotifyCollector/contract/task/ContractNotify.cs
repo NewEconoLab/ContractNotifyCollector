@@ -19,6 +19,7 @@ namespace ContractNotifyCollector.core.task
         private MongoDBHelper mh = new MongoDBHelper();
         private DbConnInfo localConn;
         private DbConnInfo remoteConn;
+        private DbConnInfo blockConn;
         Dictionary<string, JArray> structDict;
         private string notifyCounterColl;
         private string notifyColl;
@@ -27,6 +28,10 @@ namespace ContractNotifyCollector.core.task
         private int batchInterval;
         private bool initSuccFlag = false;
         private List<string> hasCreateIndex = new List<string>();
+        private string nelApiUrl = Config.nelApiUrl;
+        private bool fromApiFlag = Config.fromApiFlag;
+        private string assetColl;
+        private string[] assetids;
 
         public ContractNotify(string name) : base(name)
         {
@@ -49,10 +54,16 @@ namespace ContractNotifyCollector.core.task
             contractCounterColl = subConfig["contractCounterColl"].ToString();
             batchSize = int.Parse(subConfig["batchSize"].ToString());
             batchInterval = int.Parse(subConfig["batchInterval"].ToString());
+            assetColl = subConfig["assetColl"].ToString();
+            assetids = ((JArray)subConfig["assetids"]).Select(p => p.ToString()).ToArray();
+
 
             // db info
             localConn = Config.localDbConnInfo;
             remoteConn = Config.blockDbConnInfo;
+            blockConn = Config.blockDbConnInfo;
+            //
+            initAssetPricision();
             initSuccFlag = true;
         }
 
@@ -235,6 +246,7 @@ namespace ContractNotifyCollector.core.task
                             string valueLevel2 = jvv["value"].ToString();
                             JObject taskEscape = (JObject)notifyStruct[i]["arrayData"][j];
                             string taskName = taskEscape["name"].ToString();
+                            updateAssetPricision(notifyInfo, taskEscape);
                             string taskValue = escapeHelper.contractDataEscap(typeLevel2, valueLevel2, taskEscape);
                             try
                             {
@@ -253,6 +265,7 @@ namespace ContractNotifyCollector.core.task
                         string value = jv["value"].ToString();
                         JObject taskEscape = (JObject)notifyStruct[i];
                         string taskName = taskEscape["name"].ToString();
+                        updateAssetPricision(notifyInfo, taskEscape);
                         string taskValue = escapeHelper.contractDataEscap(type, value, taskEscape);
                         try
                         {
@@ -275,7 +288,57 @@ namespace ContractNotifyCollector.core.task
             }
             return list;
         }
-        
+
+        private void updateAssetPricision(JObject notifyInfo, JObject taskEscape)
+        {
+            if (taskEscape["dependency"] != null)
+            {
+                string dependency = taskEscape["dependency"].ToString();
+                string assetid = notifyInfo[dependency].ToString();
+
+                if (assetPricisionDict.ContainsKey(assetid))
+                {
+                    taskEscape.Remove("decimals");
+                    taskEscape.Add("decimals", assetPricisionDict.GetValueOrDefault(assetid, 8));
+                }
+            }
+        }
+
+        private Dictionary<string, int> assetPricisionDict;
+        private void initAssetPricision()
+        {
+            if (assetids == null || assetids.Count() == 0)
+            {
+                return;
+            }
+
+            if (fromApiFlag)
+            {
+                var respRes = HttpHelper.Post(nelApiUrl, "getNep5AssetInfo", new JArray { new JArray { assetids } });
+                var res = (JArray)JObject.Parse(respRes)["result"];
+                assetPricisionDict = res.ToDictionary(k => k["assetid"].ToString(), v => (int)v["decimals"]);
+                return;
+            }
+
+            // 
+            string findStr = null;
+            if (assetids.Count() == 1)
+            {
+                findStr = new JObject() { { "assetid", assetids[0] } }.ToString();
+            }
+            else
+            {
+                findStr = new JObject() { { "$or", new JArray() { assetids.Select(item => new JObject() { { "assetid", item } }).ToArray() } } }.ToString();
+            }
+            string fieldStr = new JObject() { { "assetid", 1 }, { "decimals", 1 }, { "_id", 0 } }.ToString();
+            var queryRes = mh.GetDataWithField(blockConn.connStr, blockConn.connDB, assetColl, fieldStr, findStr);
+            if (queryRes == null || queryRes.Count() == 0)
+            {
+                throw new Exception("Not find asset'pricision");
+            }
+            assetPricisionDict = queryRes.ToDictionary(k => k["assetid"].ToString(), v => (int)v["decimals"]);
+        }
+
         private void updateLocalRecord(long height)
         {
             string findStr = new JObject() { { "counter", "notify" } }.ToString();
