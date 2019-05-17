@@ -251,7 +251,8 @@ namespace ContractNotifyCollector.contract.task
                 nowPrice = endPrice;
             }
 
-            saleRate = (startPrice - nowPrice) % (startPrice - endPrice);// 计算比例待修改
+            saleRate = (startPrice - nowPrice) / (startPrice - endPrice);
+            saleRate = decimal.Parse(saleRate.ToString("#0.0000"));
             if (nowPrice != endPrice) calcType = DexCalcType.NeedCalc;
         }
         private void loopCalcNowPriceAndSaleRate(long blockindex)
