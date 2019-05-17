@@ -22,8 +22,10 @@ namespace ContractNotifyCollector.contract.task
 
         private DbConnInfo localConn;
         private DbConnInfo remoteConn;
+        private DbConnInfo blockConn;
         private bool initSuccFlag = false;
         private bool hasCreateIndex = false;
+        private bool firstRunFlag = true;
 
         public DexBalanceTask(string name):base(name)
         {
@@ -42,6 +44,7 @@ namespace ContractNotifyCollector.contract.task
             //
             localConn = Config.localDbConnInfo;
             remoteConn = Config.remoteDbConnInfo;
+            blockConn = Config.blockDbConnInfo;
             initSuccFlag = true;
         }
 
@@ -59,11 +62,12 @@ namespace ContractNotifyCollector.contract.task
                 catch (Exception ex)
                 {
                     LogHelper.printEx(ex);
-                    Thread.Sleep(10 * 000);
+                    Thread.Sleep(10 * 1000);
                     // continue
                 }
             }
         }
+
         private void process()
         {
             long rh = getRemoteHeight();
@@ -73,9 +77,14 @@ namespace ContractNotifyCollector.contract.task
                 log(lh, rh);
                 return;
             }
-            for(long index=lh+1; index <=rh; ++index)
+            if (firstRunFlag)
             {
-                string findStr = new JObject() { { "blockindex", index},{ "displayName", "dexTransfer" } }.ToString();
+                rh = lh + 1;
+                firstRunFlag = false;
+            }
+            for (long index=lh+1; index <=rh; ++index)
+            {
+                string findStr = new JObject() { { "blockindex", index},{"$or", new JArray { new JObject { { "displayName", "setMoneyIn" } }, new JObject { { "displayName", "getMoneyBack" } }, new JObject { { "displayName", "dexTransfer" } } } } }.ToString();
                 var queryRes = mh.GetData(remoteConn.connStr, remoteConn.connDB, remoteConnStateCol, findStr);
                 if (queryRes == null || queryRes.Count == 0)
                 {
@@ -83,26 +92,17 @@ namespace ContractNotifyCollector.contract.task
                     log(index, rh);
                     continue;
                 }
+                var 
+                rr = queryRes.Where(p => p["displayName"].ToString() == "setMoneyIn").ToArray();
+                if (rr != null && rr.Count() > 0) handleSetMoneyIn(rr);
+                rr = queryRes.Where(p => p["displayName"].ToString() == "getMoneyBack").ToArray();
+                if (rr != null && rr.Count() > 0) handleGetMoneyBack(rr);
+                rr = queryRes.Where(p => p["displayName"].ToString() == "dexTransfer").ToArray();
+                if (rr != null && rr.Count() > 0) handleDexTransfer(rr);
+
+
                 //
-                queryRes.GroupBy(p => p["from"].ToString(), (k, g) => {
-                    return new
-                    {
-                        addr = k.ToString(),
-                        value = g.Sum(pg => decimal.Parse(pg["value"].ToString()))
-                    };
-                }).Where(p => p.addr != "").ToList().ForEach(p => {
-                    subBalance(p.addr, remoteConnStateCol, p.value);
-                });
-                //
-                queryRes.GroupBy(p => p["to"].ToString(), (k, g) => {
-                    return new
-                    {
-                        addr = k.ToString(),
-                        value = g.Sum(pg => decimal.Parse(pg["value"].ToString()))
-                    };
-                }).Where(p => p.addr != "").ToList().ForEach(p => {
-                    addBalance(p.addr, remoteConnStateCol, p.value);
-                });
+                
                 //
                 confirm();
                 updateRecord(index);
@@ -113,7 +113,90 @@ namespace ContractNotifyCollector.contract.task
             if (hasCreateIndex) return;
             mh.setIndex(localConn.connStr, localConn.connDB, dexBalanceStateCol, "{'address':1}", "i_address");
             mh.setIndex(localConn.connStr, localConn.connDB, dexBalanceStateCol, "{'address':1,'contractHash':1}", "i_address_contractHash");
+            mh.setIndex(localConn.connStr, localConn.connDB, dexBalanceStateCol, "{'address':1,'contractHash':1,'assetHash':1}", "i_address_contractHash_assetHash");
+            mh.setIndex(localConn.connStr, localConn.connDB, dexBalanceStateCol, "{'curvalue':1}", "i_curvalue");
             hasCreateIndex = true;
+        }
+
+        private void handleSetMoneyIn(JToken[] rr)
+        {
+            rr.GroupBy(p => p["who"].ToString(), (k, g) =>
+            {
+                return g.GroupBy(px => px["assetHash"].ToString(), (kx, gx) =>
+                {
+                    return new
+                    {
+                        addr = k.ToString(),
+                        assetHash = kx.ToString(),
+                        value = gx.Sum(pg => decimal.Parse(pg["value"].ToString()))
+                    };
+                });
+            }).SelectMany(p => p).ToList().ForEach(p =>
+            {
+                addBalance(p.addr, remoteConnStateCol, p.assetHash, getAssetName(p.assetHash), p.value);
+            });
+        }
+        private void handleGetMoneyBack(JToken[] rr)
+        {
+            rr.GroupBy(p => p["who"].ToString(), (k, g) =>
+            {
+                return g.GroupBy(px => px["assetHash"].ToString(), (kx, gx) =>
+                {
+                    return new
+                    {
+                        addr = k.ToString(),
+                        assetHash = kx.ToString(),
+                        value = gx.Sum(pg => decimal.Parse(pg["value"].ToString()))
+                    };
+                });
+            }).SelectMany(p => p).ToList().ForEach(p =>
+            {
+                subBalance(p.addr, remoteConnStateCol, p.assetHash, getAssetName(p.assetHash), p.value);
+            });
+        }
+        private void handleDexTransfer(JToken[] rr)
+        {
+            rr.GroupBy(p => p["from"].ToString(), (k, g) => {
+                return g.GroupBy(px => px["assetHash"].ToString(), (kx, gx) =>
+                {
+                    return new
+                    {
+                        addr = k.ToString(),
+                        assetHash = kx.ToString(),
+                        value = gx.Sum(pg => decimal.Parse(pg["value"].ToString()))
+                    };
+                }).ToArray();
+                /*
+                return new
+                {
+                    addr = k.ToString(),
+                    value = g.Sum(pg => decimal.Parse(pg["value"].ToString()))
+                };
+                */
+            }).SelectMany(p => p).Where(p => p.addr != "").ToList().ForEach(p => {
+                subBalance(p.addr, remoteConnStateCol, p.assetHash, getAssetName(p.assetHash), p.value);
+            });
+            //
+            rr.GroupBy(p => p["to"].ToString(), (k, g) => {
+                return g.GroupBy(px => px["assetHash"].ToString(), (kx, gx) =>
+                {
+                    return new
+                    {
+                        addr = k.ToString(),
+                        assetHash = kx.ToString(),
+                        value = gx.Sum(pg => decimal.Parse(pg["value"].ToString()))
+                    };
+                }).ToArray();
+                /*
+                return new
+                {
+                    addr = k.ToString(),
+                    value = g.Sum(pg => decimal.Parse(pg["value"].ToString()))
+                };
+                */
+            }).SelectMany(p => p).Where(p => p.addr != "").ToList().ForEach(p => {
+                addBalance(p.addr, remoteConnStateCol, p.assetHash, getAssetName(p.assetHash), p.value);
+            });
         }
 
         [BsonIgnoreExtraElements]
@@ -122,15 +205,17 @@ namespace ContractNotifyCollector.contract.task
             public ObjectId _id { get; set; }
             public string address { get; set; }
             public string contractHash { get; set; }
+            public string assetHash { get; set; }
+            public string assetName { get; set; }
             //public string balance { get; set; }
             public BsonDecimal128 balance { get; set; }
             //public string curvalue { get; set; }
             public BsonDecimal128 curvalue { get; set; }
         }
-        private void addBalance(string address, string contractHash, decimal value)
+        private void addBalance(string address, string contractHash, string assetHash, string assetName, decimal value)
         {
             DexBalanceBody data = null;
-            string findstr = new JObject() { { "address", address }, { "contractHash", contractHash } }.ToString();
+            string findstr = new JObject() { { "address", address }, { "contractHash", contractHash }, { "assetHash", assetHash } }.ToString();
             List<DexBalanceBody> res = mh.GetData<DexBalanceBody>(localConn.connStr, localConn.connDB, dexBalanceStateCol, findstr);
             if (res == null || res.Count == 0)
             {
@@ -139,8 +224,10 @@ namespace ContractNotifyCollector.contract.task
                 {
                     address = address,
                     contractHash = contractHash,
-                    balance = format(value),
-                    curvalue = format(value)
+                    assetHash = assetHash,
+                    assetName = assetName,
+                    balance = value.format(),
+                    curvalue = value.format()
                 };
                 mh.PutData<DexBalanceBody>(localConn.connStr, localConn.connDB, dexBalanceStateCol, data);
             }
@@ -148,15 +235,15 @@ namespace ContractNotifyCollector.contract.task
             {
                 // update or replace
                 data = res[0];
-                data.balance = format(format(data.balance) + value);
-                data.curvalue = format(format(data.curvalue) + value);
+                data.balance = (data.balance.format() + value).format();
+                data.curvalue = (data.curvalue.format() + value).format();
                 mh.ReplaceData<DexBalanceBody>(localConn.connStr, localConn.connDB, dexBalanceStateCol, data, findstr);
             }
         }
-        private void subBalance(string address, string contractHash, decimal value)
+        private void subBalance(string address, string contractHash, string assetHash, string assetName, decimal value)
         {
             DexBalanceBody data = null;
-            string findstr = new JObject() { { "address", address }, { "contractHash", contractHash } }.ToString();
+            string findstr = new JObject() { { "address", address }, { "contractHash", contractHash }, { "assetHash", assetHash} }.ToString();
             List<DexBalanceBody> res = mh.GetData<DexBalanceBody>(localConn.connStr, localConn.connDB, dexBalanceStateCol, findstr);
             if (res == null || res.Count == 0)
             {
@@ -164,8 +251,10 @@ namespace ContractNotifyCollector.contract.task
                 {
                     address = address,
                     contractHash = contractHash,
-                    balance = format(value * -1),
-                    curvalue = format(value * -1)
+                    assetHash = assetHash,
+                    assetName = assetName,
+                    balance = (value * -1).format(),
+                    curvalue = (value * -1).format()
                 };
                 mh.PutData<DexBalanceBody>(localConn.connStr, localConn.connDB, dexBalanceStateCol, data);
             }
@@ -173,8 +262,8 @@ namespace ContractNotifyCollector.contract.task
             {
                 // update or replace
                 data = res[0];
-                data.balance = format(format(data.balance) - value);
-                data.curvalue = format(format(data.curvalue) - value);
+                data.balance = (data.balance.format() - value).format();
+                data.curvalue =(data.curvalue.format() - value).format();
                 mh.ReplaceData<DexBalanceBody>(localConn.connStr, localConn.connDB, dexBalanceStateCol, data, findstr);
             }
 
@@ -187,8 +276,8 @@ namespace ContractNotifyCollector.contract.task
             List<DexBalanceBody> res = mh.GetData<DexBalanceBody>(localConn.connStr, localConn.connDB, dexBalanceStateCol, findstr);
             foreach (DexBalanceBody jo in res)
             {
-                jo.curvalue = format(0);
-                findstr = new JObject() { { "address", jo.address }, { "contractHash", jo.contractHash } }.ToString();
+                jo.curvalue = decimal.Zero.format();
+                findstr = new JObject() { { "address", jo.address }, { "contractHash", jo.contractHash }, { "assetHash", jo.assetHash} }.ToString();
                 mh.ReplaceData<DexBalanceBody>(localConn.connStr, localConn.connDB, dexBalanceStateCol, jo, findstr);
             }
         }
@@ -200,11 +289,29 @@ namespace ContractNotifyCollector.contract.task
 
             foreach (DexBalanceBody item in res)
             {
-                item.balance = format(format(item.balance) - format(item.curvalue));
-                item.curvalue = format(0);
-                findstr = new JObject() { { "address", item.address }, { "contractHash", item.contractHash } }.ToString();
+                item.balance = (item.balance.format() - item.curvalue.format()).format();
+                item.curvalue = decimal.Zero.format();
+                findstr = new JObject() { { "address", item.address }, { "contractHash", item.contractHash }, { "assetHash", item.assetHash } }.ToString();
                 mh.ReplaceData<DexBalanceBody>(localConn.connStr, localConn.connDB, dexBalanceStateCol, item, findstr);
             }
+        }
+
+        private Dictionary<string, string> assetNameDict;
+        private string getAssetName(string assetHash)
+        {
+            if (assetNameDict == null) assetNameDict = new Dictionary<string, string>();
+            if (assetNameDict.TryGetValue(assetHash, out string assetName)) return assetName;
+
+            // 
+            string findStr = new JObject() { { "assetid", assetHash } }.ToString();
+            var queryRes = mh.GetData(blockConn.connStr, blockConn.connDB, "NEP5asset", findStr);
+            if (queryRes != null && queryRes.Count > 0)
+            {
+                string name = queryRes[0]["symbol"].ToString();
+                assetNameDict.Add(assetHash, name);
+                return name;
+            }
+            return "";
         }
 
         private void updateRecord(long height)
@@ -241,7 +348,6 @@ namespace ContractNotifyCollector.contract.task
             }
             return long.Parse(res[0]["lastBlockindex"].ToString());
         }
-
         private void log(long localHeight, long remoteHeight)
         {
             Console.WriteLine(DateTime.Now + string.Format(" {0}.self processed at {1}/{2}", name(), localHeight, remoteHeight));
@@ -249,16 +355,6 @@ namespace ContractNotifyCollector.contract.task
         private void ping()
         {
             LogHelper.ping(batchInterval, name());
-        }
-
-        public static BsonDecimal128 format(decimal value)
-        {
-            return BsonDecimalHelper.format(value);
-        }
-
-        public static decimal format(BsonDecimal128 value)
-        {
-            return BsonDecimalHelper.format(value);
         }
     }
 }

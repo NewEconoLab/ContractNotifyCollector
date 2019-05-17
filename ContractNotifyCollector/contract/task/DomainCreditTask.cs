@@ -55,7 +55,7 @@ namespace ContractNotifyCollector.contract.task
                 catch (Exception ex)
                 {
                     LogHelper.printEx(ex);
-                    Thread.Sleep(10 * 000);
+                    Thread.Sleep(10 * 1000);
                     // continue
                 }
             }
