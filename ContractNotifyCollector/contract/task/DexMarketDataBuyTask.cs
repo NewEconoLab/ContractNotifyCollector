@@ -83,7 +83,7 @@ namespace ContractNotifyCollector.contract.task
                 rh = lh + 1;
                 firstRunFlag = false;
             }
-            for(long index=lh+1; index<=rh; ++index)
+            for (long index = lh + 1; index <= rh; ++index)
             {
                 string findStr = new JObject() { {"blockindex", index }, { "$or", new JArray {
                     new JObject() { {"displayName", "NNSofferToBuy" } },
@@ -92,18 +92,18 @@ namespace ContractNotifyCollector.contract.task
                     new JObject() { {"displayName", "handleSellMoney" } }
                 } } }.ToString();
                 var queryRes = mh.GetData(remoteConn.connStr, remoteConn.connDB, remoteConnStateCol, findStr);
-                if(queryRes != null && queryRes.Count > 0)
+                if (queryRes != null && queryRes.Count > 0)
                 {
                     long time = getBlockTime(index);
                     //
                     var
-                    rr = queryRes.Where(p => p["displayName"].ToString() == "NNSofferToBuy").ToArray();
+                    rr = queryRes.Where(p => p["displayName"].ToString() == "NNSofferToBuy").ToList();
                     if (rr != null && rr.Count() > 0) handleOnOfferToBuy(rr, index, time);
-                    rr = queryRes.Where(p => p["displayName"].ToString() == "NNSofferToBuyDiscontinued").ToArray();
+                    rr = queryRes.Where(p => p["displayName"].ToString() == "NNSofferToBuyDiscontinued").ToList();
                     if (rr != null && rr.Count() > 0) handleOnOfferToBuyDiscontinued(rr, index);
-                    rr = queryRes.Where(p => p["displayName"].ToString() == "NNSsell").ToArray();
+                    rr = queryRes.Where(p => p["displayName"].ToString() == "NNSsell").ToList();
                     if (rr != null && rr.Count() > 0) handleOnSell(rr, index);
-                    rr = queryRes.Where(p => p["displayName"].ToString() == "handleSellMoney").ToArray();
+                    rr = queryRes.Where(p => p["displayName"].ToString() == "handleSellMoney").ToList();
                     if (rr != null && rr.Count() > 0) handleOnHandleSellMoney(rr, index);
                 }
 
@@ -121,133 +121,59 @@ namespace ContractNotifyCollector.contract.task
 
             // 更新starCount
             // 。。。
-            
+
             if (hasCreateIndex) return;
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'fullHash':1}", "i_fullHash");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'fullDomain':1}", "i_fullDomain");
-            mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'buyerList.buyer':1}", "i_buyerList_buyer");
+            mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'fullDomain':1,'buyer':1}", "i_fullDomain_buyer");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'ttl':1}", "i_ttl");
+            mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'starCount':1}", "i_starCount");
             hasCreateIndex = true;
         }
 
-        private void handleOnOfferToBuy(JToken[] rr, long blockindex, long blocktime)
+        private void handleOnOfferToBuy(List<JToken> rr, long blockindex, long blocktime)
         {
-            rr.GroupBy(p => p["fullHash"], (k, g) =>
-            {
-                return new
-                {
-                    kk = k,
-                    gg = g
-                };
-            }).ToList().ForEach(pp => {
-                var k = pp.kk;
-                var g = pp.gg;
-                //
-                string fullHash = k.ToString();
-                string fullDomain = g.ToArray()[0]["fullDomain"].ToString();
-                string findStr = new JObject() { { "fullHash", fullHash } }.ToString();
+            rr.ToList().ForEach(p => {
+                string fullDomain = p["fullDomain"].ToString();
+                string buyer = p["buyer"].ToString();
+
+                string findStr = new JObject { {"fullDomain", fullDomain }, { "buyer", buyer} }.ToString();
                 var queryRes = mh.GetData<DexMarketDataBuyInfo>(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, findStr);
-
-                DexMarketDataBuyInfo info = null;
-                if (queryRes == null || queryRes.Count == 0)
+                if(queryRes == null || queryRes.Count == 0)
                 {
-                    info = new DexMarketDataBuyInfo
+                    var jo = getDomainTTL(p["fullHash"].ToString());
+                    var info = new DexMarketDataBuyInfo
                     {
-                        fullHash = fullHash,
-                        fullDomain = fullDomain,
+                        fullHash = p["fullHash"].ToString(),
+                        fullDomain = p["fullDomain"].ToString(),
+                        assetHash = p["assetHash"].ToString(),
+                        assetName = getAssetName(p["assetHash"].ToString()),
+                        buyer = p["buyer"].ToString(),
+                        price = decimal.Parse(p["price"].ToString()).format(),
+                        mortgagePayments = long.Parse(p["mortgagePayments"].ToString()),
+                        owner = jo["owner"].ToString(),
+                        ttl = long.Parse(jo["TTL"].ToString())
                     };
-                    var jo = getDomainTTL(fullHash);
-                    info.owner = jo["owner"].ToString();
-                    info.ttl = long.Parse(jo["TTL"].ToString());
-                    // 
-                    var maxBuyerInfo = g.OrderByDescending(p => decimal.Parse(p["price"].ToString())).First();
-                    info.maxAssetHash = maxBuyerInfo["assetHash"].ToString();
-                    info.maxAssetName = getAssetName(info.maxAssetHash);
-                    info.maxBuyer = maxBuyerInfo["buyer"].ToString();
-                    info.maxPrice = decimal.Parse(maxBuyerInfo["price"].ToString()).format();
-                    info.maxTime = blocktime;
-                    //
-                    info.buyerList = g.Select(pg => new DexBuyerInfo
-                    {
-                        assetHash = pg["assetHash"].ToString(),
-                        assetName = getAssetName(pg["assetHash"].ToString()),
-                        buyer = pg["buyer"].ToString(),
-                        price = decimal.Parse(pg["price"].ToString()).format(),
-                        time = blocktime,
-                    }).ToList();
-
-                    //
                     mh.PutData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, info);
                 }
-                else
-                {
-                    info = queryRes[0];
-                    var maxBuyerInfo = g.OrderByDescending(p => decimal.Parse(p["price"].ToString())).First();
-                    if (info.maxPrice.format() < decimal.Parse(maxBuyerInfo["price"].ToString()))
-                    {
-                        info.maxAssetHash = maxBuyerInfo["assetHash"].ToString();
-                        info.maxAssetName = getAssetName(info.maxAssetHash);
-                        info.maxBuyer = maxBuyerInfo["buyer"].ToString();
-                        info.maxPrice = decimal.Parse(maxBuyerInfo["price"].ToString()).format();
-                        info.maxTime = blocktime;
-                    }
-                    foreach (var item in g)
-                    {
-                        var hasBuyer = info.buyerList.Where(gx => gx.buyer == item["buyer"].ToString()).First();
-                        if(hasBuyer != null) info.buyerList.Remove(hasBuyer);
-                        if(hasBuyer == null)
-                        {
-                            info.buyerList.Add(new DexBuyerInfo
-                            {
-                                assetHash = item["assetHash"].ToString(),
-                                assetName = getAssetName(item["assetHash"].ToString()),
-                                buyer = item["buy"].ToString(),
-                                price = decimal.Parse(item["price"].ToString()).format(),
-                                time = blocktime
-                            });
-                        }
-                    }
 
-                    //
-                    mh.ReplaceData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, info, findStr);
-                }
             });
         }
-        private void handleOnOfferToBuyDiscontinued(JToken[] rr, long blockindex)
+        private void handleOnOfferToBuyDiscontinued(List<JToken> rr, long blockindex)
         {
-            rr.GroupBy(p => p["fullHash"], (k, g) =>
-            {
-                return new {
-                    kk = k,
-                    gg = g
-                };
-            }).ToList().ForEach(pp => {
-                var k = pp.kk;
-                var g = pp.gg;
-                string fullHash = k.ToString();
-                string findStr = new JObject { { "fullHash", fullHash } }.ToString();
-                var queryRes = mh.GetData<DexMarketDataBuyInfo>(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, findStr);
-                var info = queryRes[0];
-                //
-                info.buyerList =
-                info.buyerList.Where(pg => g.All(pgx => pgx["buyer"].ToString() != pg.buyer)).ToList();
-                
-                // 
-                if(info.buyerList.Count == 0)
-                {
-                    mh.DeleteData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, findStr);
-                    return;
-                }
+            rr.ToList().ForEach(p => {
+                string fullDomain = p["fullDomain"].ToString();
+                string buyer = p["buyer"].ToString();
 
-                //
-                mh.ReplaceData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, info, findStr);
+                string findStr = new JObject { { "fullDomain", fullDomain }, { "buyer", buyer } }.ToString();
+                mh.DeleteData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, findStr);
             });
         }
-        private void handleOnSell(JToken[] rr, long blockindex)
+        private void handleOnSell(List<JToken> rr, long blockindex)
         {
             handleOnOfferToBuyDiscontinued(rr, blockindex);
         }
-        private void handleOnHandleSellMoney(JToken[] rr, long blockindex)
+        private void handleOnHandleSellMoney(List<JToken> rr, long blockindex)
         {
 
         }
@@ -357,33 +283,18 @@ namespace ContractNotifyCollector.contract.task
             public ObjectId _id { get; set; }
             public string fullHash { get; set; }
             public string fullDomain { get; set; }
-            public string buyState { get; set; }
-            public string owner { get; set; }
-            public long ttl { get; set; }
-            public long starCount { get; set; } = 0;
-
-            // 所有资产的最大出价者信息
-            public string maxAssetHash { get; set; }
-            public string maxAssetName { get; set; }
-            public string maxBuyer { get; set; }
-            public BsonDecimal128 maxPrice { get; set; }
-            public long maxTime { get; set; }
-
-            public List<DexBuyerInfo> buyerList { get; set; }
-
-
-        }
-        class DexBuyerInfo
-        {
             public string assetHash { get; set; }
             public string assetName { get; set; }
             public string buyer { get; set; }
             public BsonDecimal128 price { get; set; }
             public long time { get; set; }
-
+            public long mortgagePayments { get; set; }
+            public string owner { get; set; }
+            public long ttl { get; set; }
+            public long starCount { get; set; } = 0;
         }
     }
 
-    
+
 }
 
