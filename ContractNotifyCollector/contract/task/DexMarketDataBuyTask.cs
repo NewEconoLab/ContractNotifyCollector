@@ -149,6 +149,7 @@ namespace ContractNotifyCollector.contract.task
                         assetHash = p["assetHash"].ToString(),
                         assetName = getAssetName(p["assetHash"].ToString()),
                         buyer = p["buyer"].ToString(),
+                        time = blocktime,
                         price = decimal.Parse(p["price"].ToString()).format(),
                         mortgagePayments = long.Parse(p["mortgagePayments"].ToString()),
                         owner = jo["owner"].ToString(),
