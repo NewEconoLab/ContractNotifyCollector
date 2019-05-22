@@ -150,6 +150,7 @@ namespace ContractNotifyCollector.contract.task
                 {
                     fullHash = p["fullHash"].ToString(),
                     fullDomain = p["fullDomain"].ToString(),
+                    sellType = startPrice == endPrice ? DexSellType.OneSell: DexSellType.SaleSell,
                     assetHash = p["assetHash"].ToString(),
                     assetName = getAssetName(p["assetHash"].ToString()),
                     seller = p["auctioner"].ToString(),
