@@ -29,11 +29,11 @@ namespace ContractNotifyCollector.core.task
         private string domainRecord;
         private string domainOwnerCol;
         private string nnsSellingAddr;
+        private string dexContractHash = "0x38946e74b5ceb959027ad43b5d952260ff4dc6cc";
         private int batchSize;
         private int batchInterval;
         private bool initSuccFlag = false;
         private bool hasCreateIndex = false;
-
         private Dictionary<string, string> parenthashDict = new Dictionary<string, string>();
 
         public DomainCenterAnalyzer(string name):base(name)
@@ -53,6 +53,7 @@ namespace ContractNotifyCollector.core.task
             domainRecord = cfg["domainRecord"].ToString();
             domainOwnerCol = cfg["domainOwnerCol"].ToString();
             nnsSellingAddr = cfg["nnsSellingAddr"].ToString();
+            dexContractHash = cfg["dexContractHash"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
 
@@ -72,6 +73,7 @@ namespace ContractNotifyCollector.core.task
                 {
                     ping();
                     process();
+                    processDomainDex();
                 }
                 catch (Exception ex)
                 {
@@ -316,6 +318,50 @@ namespace ContractNotifyCollector.core.task
             }
         }
 
+
+        
+        private void processDomainDex()
+        {
+            string subCounter = ".dexDomainSell";
+            long rh = getRemoteHeight();
+            long lh = getLocalHeight(subCounter);
+            long llh = getLocalHeight();
+            if (rh > llh) rh = llh;
+
+            if (lh >= rh) return;
+            for(long index = lh+1; index<=rh; ++index)
+            {
+                string findStr = new JObject() { {"blockindex", index }, { "$or", new JArray {
+                    new JObject() { {"displayName", "NNSauction" } },
+                    new JObject() { {"displayName", "NNSauctionDiscontinued" } },
+                    new JObject() { {"displayName", "NNSbet" } }
+                } } }.ToString();
+                var queryRes = mh.GetData(remoteConn.connStr, remoteConn.connDB, dexContractHash, findStr);
+                if (queryRes != null && queryRes.Count > 0)
+                {
+                    processDomainDexNNSauction(queryRes);
+                }
+
+                updateRecord(index, subCounter);
+                log(index, rh, subCounter);
+            }
+        }
+        private void processDomainDexNNSauction(JArray rr)
+        {
+            rr.ToList().ForEach(p => {
+                string findStr = new JObject { {"namehash", p["fullHash"] } }.ToString();
+                var queryRes = mh.GetData(localConn.connStr, localConn.connDB, domainOwnerCol, findStr);
+                if (queryRes == null || queryRes.Count == 0) return;
+                
+                var dexLaunchFlag = p["displayName"].ToString() == "NNSauction" ? "1" : "0";
+                if (queryRes[0]["dexLaunchFlag"] != null && queryRes[0]["dexLaunchFlag"].ToString() == dexLaunchFlag) return;
+
+                var dexLaunchPrice = p["startPrice"];
+                string updateStr = new JObject { { "$set", new JObject { { "dexLaunchFlag", dexLaunchFlag },{ "dexLaunchPrice", dexLaunchPrice } } } }.ToString();
+                mh.UpdateData(localConn.connStr, localConn.connDB, domainOwnerCol, updateStr, findStr);
+            });
+        }
+
         private long getBlockHeight()
         {
             string findStr = new JObject() { { "counter", "block" } }.ToString();
@@ -330,10 +376,10 @@ namespace ContractNotifyCollector.core.task
             return query.ToDictionary(k => long.Parse(k["index"].ToString()), v => long.Parse(v["time"].ToString()));
         }
 
-        private void updateRecord(long maxBlockindex)
+        private void updateRecord(long maxBlockindex, string subCounter="")
         {
-            string newdata = new JObject() { { "counter", domainOwnerCol }, { "lastBlockindex", maxBlockindex } }.ToString();
-            string findstr = new JObject() { { "counter", domainOwnerCol } }.ToString();
+            string newdata = new JObject() { { "counter", domainOwnerCol + subCounter }, { "lastBlockindex", maxBlockindex } }.ToString();
+            string findstr = new JObject() { { "counter", domainOwnerCol + subCounter } }.ToString();
             long cnt = mh.GetDataCount(localConn.connStr, localConn.connDB, domainRecord, findstr);
             if (cnt <= 0)
             {
@@ -344,9 +390,9 @@ namespace ContractNotifyCollector.core.task
                 mh.ReplaceData(localConn.connStr, localConn.connDB, domainRecord, newdata, findstr);
             }
         }
-        private long getLocalHeight()
+        private long getLocalHeight(string subCounter="")
         {
-            string findstr = new JObject() { { "counter", domainOwnerCol } }.ToString();
+            string findstr = new JObject() { { "counter", domainOwnerCol + subCounter } }.ToString();
             JArray res = mh.GetData(localConn.connStr, localConn.connDB, domainRecord, findstr);
             if (res == null || res.Count == 0)
             {
@@ -364,12 +410,10 @@ namespace ContractNotifyCollector.core.task
             }
             return long.Parse(Convert.ToString(res.OrderBy(p => int.Parse(p["lastBlockindex"].ToString())).ToArray()[0]["lastBlockindex"]));
         }
-
-        private void log(long localHeight, long remoteHeight)
+        private void log(long localHeight, long remoteHeight, string subCounter="")
         {
-            Console.WriteLine(DateTime.Now + string.Format(" {0}.self processed at {1}/{2}", name(), localHeight, remoteHeight));
+            Console.WriteLine(DateTime.Now + string.Format(" {0}.self processed at {1}/{2}", name()+ subCounter, localHeight, remoteHeight));
         }
-
         private void ping()
         {
             LogHelper.ping(batchInterval, name());
