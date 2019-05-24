@@ -143,6 +143,8 @@ namespace ContractNotifyCollector.core.task
                             foreach (JObject execution in (JArray)jo["executions"])
                             {
                                 string state = execution["vmstate"].ToString();
+                                //if (state == "FAULT, BREAK") continue;
+                                if (state.ToUpper().StartsWith("FAULT")) continue;
                                 // stack...
                                 var c = (JArray)execution["notifications"];
                                 if (c == null || c.Count() == 0) continue;
@@ -157,6 +159,8 @@ namespace ContractNotifyCollector.core.task
                         else
                         {
                             string vmstate = jo["vmstate"].ToString();
+                            //if (vmstate == "FAULT, BREAK") continue;
+                            if (vmstate.ToUpper().StartsWith("FAULT")) continue;
                             // stack...
                             JArray notifications = (JArray)jo["notifications"];
                             List<JObject> r = processNotifications(notifications, blockindex, txid, vmstate);
