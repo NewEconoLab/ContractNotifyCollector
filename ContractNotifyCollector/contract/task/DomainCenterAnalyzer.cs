@@ -29,7 +29,8 @@ namespace ContractNotifyCollector.core.task
         private string domainRecord;
         private string domainOwnerCol;
         private string nnsSellingAddr;
-        private string dexContractHash = "0x38946e74b5ceb959027ad43b5d952260ff4dc6cc";
+        private string dexContractHash;
+        private string dexSellingAddr;
         private int batchSize;
         private int batchInterval;
         private bool initSuccFlag = false;
@@ -54,6 +55,7 @@ namespace ContractNotifyCollector.core.task
             domainOwnerCol = cfg["domainOwnerCol"].ToString();
             nnsSellingAddr = cfg["nnsSellingAddr"].ToString();
             dexContractHash = cfg["dexContractHash"].ToString();
+            dexSellingAddr = cfg["dexSellingAddr"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
 
@@ -115,7 +117,16 @@ namespace ContractNotifyCollector.core.task
                 JArray queryRes = mh.GetDataWithField(remoteConn.connStr, remoteConn.connDB, domainCenterCol, queryField.ToString(), queryFilter.ToString());
                 if (queryRes != null && queryRes.Count() > 0)
                 {
-                    processDomainCenter(queryRes);
+                    //processDomainCenter(queryRes);
+                    var ja = queryRes.Where(p => 
+                        p["owner"].ToString() != nnsSellingAddr
+                        && p["owner"].ToString() != dexSellingAddr
+                        ).ToArray();
+                    if(ja != null && ja.Count() > 0)
+                    {
+                        processDomainCenter(ja);
+                    }
+                    
                 }
 
                 // 解析器
@@ -164,7 +175,7 @@ namespace ContractNotifyCollector.core.task
             hasCreateIndex = true;
         }
 
-        private void processDomainCenter(JArray domainCenterRes)
+        private void processDomainCenter(JToken[] domainCenterRes)
         {
             var pRes = domainCenterRes.GroupBy(p => p["namehash"].ToString(), (k, g) => new { namehash = k.ToString(), item = g.OrderByDescending(pg => long.Parse(pg["blockindex"].ToString())).First() }).ToArray();
             foreach(var item in pRes)
