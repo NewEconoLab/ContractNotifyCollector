@@ -18,6 +18,9 @@ namespace ContractNotifyCollector.contract.task
         private string dexDomainBuyRecordCol;
         private string dexDomainBuyStateCol;
         private string domainCenterHash = "0xbd3fa97e2bc841292c1e77f9a97a1393d5208b48";
+        private string dexRecordTimeCol;
+        private string dexStarStateCol;
+        private string dexSellingAddr;
         private int batchInterval;
         private int batchSize;
 
@@ -42,7 +45,10 @@ namespace ContractNotifyCollector.contract.task
             dexDomainBuyStateCol = cfg["dexDomainBuyStateCol"].ToString();
             batchSize = int.Parse(cfg["batchSize"].ToString());
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
-
+            //
+            dexRecordTimeCol = cfg["dexRecordTimeCol"].ToString();
+            dexStarStateCol = cfg["dexStarStateCol"].ToString();
+            dexSellingAddr = cfg["dexSellingAddr"].ToString();
             //
             localConn = Config.localDbConnInfo;
             remoteConn = Config.remoteDbConnInfo;
@@ -59,6 +65,7 @@ namespace ContractNotifyCollector.contract.task
                 {
                     ping();
                     process();
+                    processStarCount();
                 }
                 catch (Exception ex)
                 {
@@ -153,7 +160,8 @@ namespace ContractNotifyCollector.contract.task
                         price = decimal.Parse(p["price"].ToString()).format(),
                         mortgagePayments = long.Parse(p["mortgagePayments"].ToString()),
                         owner = jo["owner"].ToString(),
-                        ttl = long.Parse(jo["TTL"].ToString())
+                        ttl = long.Parse(jo["TTL"].ToString()),
+                        starCount = calcStarCount(p["fullDomain"].ToString())
                     };
                     mh.PutData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, info);
                 }
@@ -179,7 +187,7 @@ namespace ContractNotifyCollector.contract.task
 
         }
 
-
+        //
         private Dictionary<string, string> assetNameDict;
         private string getAssetName(string assetHash)
         {
@@ -212,10 +220,80 @@ namespace ContractNotifyCollector.contract.task
             var queryRes = mh.GetDataPagesWithField(localConn.connStr, localConn.connDB, domainCenterHash, fieldStr, 1, 1, sortStr, findStr);
             return queryRes[0];
         }
+        //
+        private long calcStarCount(string fullDomain)
+        {
+            string findStr = new JObject { { "fullDomain", fullDomain }, { "state", "1" } }.ToString();
+            long count = mh.GetDataCount(localConn.connStr, localConn.connDB, dexStarStateCol, findStr);
+            return count;
+        }
+        private void processStarCount()
+        {
+            string starKey = "starCount.dexDomainSellState";
+            long lt = getLastCalcTime(starKey);
+            if (lt == -1) return;
+            string findStr = new JObject { { "lastUpdateTime", new JObject { { "$gt", lt } } } }.ToString();
+            var queryRes = mh.GetData(localConn.connStr, localConn.connDB, dexStarStateCol, findStr);
+            if (queryRes == null || queryRes.Count == 0) return;
+
+            var res = queryRes.GroupBy(p => p["fullDomain"], (k, g) =>
+            {
+                return new
+                {
+                    fullDomain = k.ToString(),
+                    lastUpdateTime = g.Sum(pg => long.Parse(pg["lastUpdateTime"].ToString()))
+                };
+            }).GroupBy(p => p.lastUpdateTime, (k, g) => {
+                return new
+                {
+                    lastUpdateTime = k,
+                    fullDomainSet = g
+                };
+            }).OrderBy(p => p.lastUpdateTime);
+
+            string updateStr = null;
+            long starCount = 0;
+            foreach (var item in res)
+            {
+
+                foreach (var sub in item.fullDomainSet)
+                {
+                    // 获取最新的关注数量
+                    findStr = new JObject { { "fullDomain", sub.fullDomain }, { "state", "1" } }.ToString();
+                    starCount = mh.GetDataCount(localConn.connStr, localConn.connDB, dexStarStateCol, findStr);
+
+                    // 更新出售合约列表
+                    updateStr = new JObject { { "$set", new JObject { { "starCount", starCount } } } }.ToString();
+                    mh.UpdateData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, updateStr, findStr);
+                }
+
+                // 更新高度
+                updateLastCalcTime(starKey, item.lastUpdateTime);
+            }
+        }
+        private void updateLastCalcTime(string key, long time)
+        {
+            string findStr = new JObject { { "key", key } }.ToString();
+            string updateStr = new JObject { { "lastUpdateTime", time } }.ToString();
+            mh.UpdateData(localConn.connStr, localConn.connDB, dexRecordTimeCol, updateStr, findStr);
+        }
+        private long getLastCalcTime(string key)
+        {
+            string findStr = new JObject { { "key", key } }.ToString();
+            JArray res = mh.GetData(localConn.connStr, localConn.connDB, dexRecordTimeCol, findStr);
+            if (res == null || res.Count == 0)
+            {
+                return -1;
+            }
+            return long.Parse(res[0]["lastUpdateTime"].ToString());
+        }
+        //
         private void handleDomainCenter(JArray ja, long blockindex)
         {
             foreach (var jo in ja)
             {
+                if (jo["owner"].ToString() == dexSellingAddr) continue;
+
                 string fullHash = jo["namehash"].ToString();
                 string owner = jo["owner"].ToString();
                 string ttl = jo["TTL"].ToString();
