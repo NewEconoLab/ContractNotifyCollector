@@ -66,6 +66,7 @@ namespace ContractNotifyCollector.contract.task
                     ping();
                     process();
                     processStarCount();
+                    processDomainTTL();
                 }
                 catch (Exception ex)
                 {
@@ -133,11 +134,14 @@ namespace ContractNotifyCollector.contract.task
             
 
             if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, dexDomainSellStateCol, "{'auctionid':1}", "i_auctionid");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainSellStateCol, "{'fullHash':1}", "i_fullHash");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainSellStateCol, "{'fullDomain':1}", "i_fullDomain");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainSellStateCol, "{'lastCalcTime':1}", "i_lastCalcTime");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainSellStateCol, "{'lastCalcTime':1,'calcType':1}", "i_lastCalcTime_calcType");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainSellStateCol, "{'ttl':1}", "i_ttl");
+            mh.setIndex(localConn.connStr, localConn.connDB, dexDomainSellStateCol, "{'ttl':1,'sellState':1}", "i_ttl_sellState");
+            mh.setIndex(localConn.connStr, localConn.connDB, dexDomainSellStateCol, "{'fullDomain':1,'sellState':1}", "i_fullDomain_sellState");
             hasCreateIndex = true;
         }
         
@@ -155,9 +159,11 @@ namespace ContractNotifyCollector.contract.task
 
                 return new DexMarketDataSellInfo
                 {
+                    auctionid = p["auctionid"].ToString(),
                     fullHash = p["fullHash"].ToString(),
                     fullDomain = p["fullDomain"].ToString(),
                     sellType = startPrice == endPrice ? DexSellType.OneSell: DexSellType.SaleSell,
+                    sellState = DexSellState.Normal_YES,
                     assetHash = p["assetHash"].ToString(),
                     assetName = getAssetName(p["assetHash"].ToString()),
                     seller = p["auctioner"].ToString(),
@@ -179,7 +185,7 @@ namespace ContractNotifyCollector.contract.task
             }).ToArray();
             foreach(var item in res)
             {
-                string findstr = new JObject() { {"fullHash", item.fullHash }, { "sellState", DexState.NNSauction } }.ToString();
+                string findstr = new JObject() { { "auctionid", item.auctionid } }.ToString();
                 if(mh.GetDataCount(localConn.connStr, localConn.connDB, dexDomainSellStateCol, findstr) == 0)
                 {
                     mh.PutData(localConn.connStr, localConn.connDB, dexDomainSellStateCol, item);
@@ -195,7 +201,7 @@ namespace ContractNotifyCollector.contract.task
         {
             foreach(var item in rr)
             {
-                string findStr = new JObject() { {"fullHash", item["fullHash"] } }.ToString();
+                string findStr = new JObject() { { "auctionid", item["auctionid"] } }.ToString();
                 mh.DeleteData(localConn.connStr, localConn.connDB, dexDomainSellStateCol, findStr);
             }
         }
@@ -284,7 +290,7 @@ namespace ContractNotifyCollector.contract.task
                 p.calcType = calcType;
                 p.lastCalcTime = blocktime;
 
-                var filter = new JObject { {"fullHash", p.fullHash } }.ToString();
+                var filter = new JObject { { "auctionid", p.auctionid } }.ToString();
                 mh.ReplaceData(localConn.connStr, localConn.connDB, dexDomainSellStateCol, p, filter);
             });
 
@@ -292,7 +298,7 @@ namespace ContractNotifyCollector.contract.task
         //
         private long calcStarCount(string fullDomain)
         {
-            string findStr = new JObject { { "fullDomain", fullDomain },{ "state","1"} }.ToString();
+            string findStr = new JObject { { "fullDomain", fullDomain },{ "state", StarState.Star_Yes} }.ToString();
             long count = mh.GetDataCount(localConn.connStr, localConn.connDB, dexStarStateCol, findStr);
             return count;
         }
@@ -328,10 +334,11 @@ namespace ContractNotifyCollector.contract.task
                 foreach(var sub in item.fullDomainSet)
                 {
                     // 获取最新的关注数量
-                    findStr = new JObject { { "fullDomain", sub.fullDomain },{ "state", "1"} }.ToString();
+                    findStr = new JObject { { "fullDomain", sub.fullDomain },{ "state", StarState.Star_Yes} }.ToString();
                     starCount = mh.GetDataCount(localConn.connStr, localConn.connDB, dexStarStateCol, findStr);
 
                     // 更新出售合约列表
+                    findStr = new JObject { { "fullDomain", sub.fullDomain },{ "sellState", DexSellState.Normal_YES } }.ToString();
                     updateStr = new JObject { { "$set", new JObject { { "starCount", starCount } } } }.ToString();
                     mh.UpdateData(localConn.connStr, localConn.connDB, dexDomainSellStateCol, updateStr, findStr);
                 }
@@ -373,11 +380,40 @@ namespace ContractNotifyCollector.contract.task
                 {
                     if(queryRes[0]["owner"].ToString() != owner || queryRes[0]["ttl"].ToString() != ttl)
                     {
+                        findStr = getAuctionIdFindStr(fullHash);
+                        if (findStr == null) continue;
+
                         string updateStr = new JObject() { { "$set", new JObject() { { "owner", owner}, { "ttl", long.Parse(ttl)} } } }.ToString();
                         mh.UpdateData(localConn.connStr, localConn.connDB, dexDomainSellStateCol, updateStr, findStr);
                     }
                 }
             }
+        }
+        private string getAuctionIdFindStr(string fullHash)
+        {
+            string findStr = new JObject { { "fullHash", fullHash} }.ToString();
+            string fieldStr = new JObject { { "aucitonid", 1} }.ToString();
+            string sortStr = new JObject { { "sellTime", -1} }.ToString();
+            var queryRes = mh.GetDataPagesWithField(localConn.connStr, localConn.connDB, dexDomainSellStateCol, fieldStr, 1,1, sortStr, findStr);
+            if(queryRes != null && queryRes.Count > 0)
+            {
+                return new JObject { { "auctionid", queryRes[0]["aucitonid"] } }.ToString();
+            }
+            return null;
+        }
+        //
+        private void processDomainTTL()
+        {
+            string findStr = new JObject { { "ttl", new JObject { { "$lt", TimeHelper.GetTimeStamp()} } },{ "sellState", DexSellState.Normal_YES} }.ToString();
+            string fieldStr = new JObject { { "auctionid",1} }.ToString();
+            var queryRes = mh.GetDataWithField(localConn.connStr, localConn.connDB, dexDomainSellStateCol, fieldStr, findStr);
+            if (queryRes == null || queryRes.Count == 0) return;
+
+            queryRes.ToList().ForEach(p => {
+                string findstr = new JObject { { "auctionid", p["auctionid"]} }.ToString();
+                string updatestr = new JObject { { "$set", new JObject { { "sellState", DexSellState.Normal_Not } } } }.ToString();
+                mh.UpdateData(localConn.connStr, localConn.connDB, dexDomainSellStateCol, updatestr, findstr);
+            });
         }
 
 
@@ -429,9 +465,11 @@ namespace ContractNotifyCollector.contract.task
     class DexMarketDataSellInfo
     {
         public ObjectId _id { get; set; }
+        public string auctionid { get; set; }
         public string fullHash { get; set; }
         public string fullDomain { get; set; }
         public int sellType { get; set; } // 降价出售/一口价
+        public int sellState { get; set; } // 1正常出售,0出售中过期无需更新ttl
         public string assetHash { get; set; }
         public string assetName { get; set; }
         public string seller { get; set; }
@@ -450,12 +488,15 @@ namespace ContractNotifyCollector.contract.task
         public long starCount { get; set; } = 0;
     }
     
-    class DexState
+    class StarState
     {
-        public static string NNSauction = "010001"; // 上架
-        public static string NNSauctionDiscontinued = "010002"; // 下架
-        public static string NNSbet = "010003"; // 成交
-        public static string handleBetMoney = "010004"; // 领取盈利
+        public const string Star_Yes = "1";
+        public const string Star_Not = "0";
+    }
+    class DexSellState
+    {
+        public const int Normal_YES = 1; // 正常出售
+        public const int Normal_Not = 0; // 出售中域名过期，无需更新该挂单ttl
     }
     class DexSellType
     {
@@ -464,7 +505,7 @@ namespace ContractNotifyCollector.contract.task
     }
     class DexCalcType
     {
-        public const int NeedCalc = 0;
-        public const int DoneCalc = 1;
+        public const int NeedCalc = 1;
+        public const int DoneCalc = 0;
     }
 }
