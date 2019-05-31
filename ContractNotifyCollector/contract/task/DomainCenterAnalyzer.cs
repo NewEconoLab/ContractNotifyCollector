@@ -365,18 +365,36 @@ namespace ContractNotifyCollector.core.task
                 if (queryRes == null || queryRes.Count == 0) return;
 
                 var dexLaunchPrice = p["startPrice"];
+                var dexLaunchAssetName = getAssetName(p["assetHash"].ToString());
                 var dexLaunchOrderid = p["auctionid"].ToString();
                 var dexLaunchFlag = p["displayName"].ToString() == "NNSauction" ? "1" : "0";
                 if (queryRes[0]["dexLaunchFlag"] != null && queryRes[0]["dexLaunchFlag"].ToString() == dexLaunchFlag
                     && queryRes[0]["dexLaunchOrderid"] != null && queryRes[0]["dexLaunchOrderid"].ToString() == dexLaunchOrderid
+                    && queryRes[0]["dexLaunchAssetName"] != null && queryRes[0]["dexLaunchAssetName"].ToString() == dexLaunchAssetName
                 ) return;
 
                 
-                string updateStr = new JObject { { "$set", new JObject { { "dexLaunchFlag", dexLaunchFlag },{ "dexLaunchPrice", dexLaunchPrice },{ "dexLaunchOrderid", dexLaunchOrderid } } } }.ToString();
+                string updateStr = new JObject { { "$set", new JObject { { "dexLaunchFlag", dexLaunchFlag },{ "dexLaunchPrice", dexLaunchPrice }, { "dexLaunchAssetName", dexLaunchAssetName }, { "dexLaunchOrderid", dexLaunchOrderid } } } }.ToString();
                 mh.UpdateData(localConn.connStr, localConn.connDB, domainOwnerCol, updateStr, findStr);
             });
         }
+        private Dictionary<string, string> assetNameDict;
+        private string getAssetName(string assetHash)
+        {
+            if (assetNameDict == null) assetNameDict = new Dictionary<string, string>();
+            if (assetNameDict.TryGetValue(assetHash, out string assetName)) return assetName;
 
+            // 
+            string findStr = new JObject() { { "assetid", assetHash } }.ToString();
+            var queryRes = mh.GetData(blockConn.connStr, blockConn.connDB, "NEP5asset", findStr);
+            if (queryRes != null && queryRes.Count > 0)
+            {
+                string name = queryRes[0]["symbol"].ToString();
+                assetNameDict.Add(assetHash, name);
+                return name;
+            }
+            return "";
+        }
         private long getBlockHeight()
         {
             string findStr = new JObject() { { "counter", "block" } }.ToString();
