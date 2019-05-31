@@ -130,6 +130,7 @@ namespace ContractNotifyCollector.contract.task
             // 。。。
 
             if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'orderid':1}", "i_orderid");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'fullHash':1}", "i_fullHash");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'fullDomain':1}", "i_fullDomain");
             mh.setIndex(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, "{'fullDomain':1,'buyer':1}", "i_fullDomain_buyer");
@@ -140,17 +141,18 @@ namespace ContractNotifyCollector.contract.task
 
         private void handleOnOfferToBuy(List<JToken> rr, long blockindex, long blocktime)
         {
-            rr.ToList().ForEach(p => {
-                string fullDomain = p["fullDomain"].ToString();
-                string buyer = p["buyer"].ToString();
+            rr.ForEach(p =>
+            {
+                string orderid = p["offerid"].ToString();
 
-                string findStr = new JObject { {"fullDomain", fullDomain }, { "buyer", buyer} }.ToString();
+                string findStr = new JObject { { "orderid", orderid } }.ToString();
                 var queryRes = mh.GetData<DexMarketDataBuyInfo>(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, findStr);
-                if(queryRes == null || queryRes.Count == 0)
+                if (queryRes == null || queryRes.Count == 0)
                 {
                     var jo = getDomainTTL(p["fullHash"].ToString());
                     var info = new DexMarketDataBuyInfo
                     {
+                        orderid = orderid,
                         fullHash = p["fullHash"].ToString(),
                         fullDomain = p["fullDomain"].ToString(),
                         assetHash = p["assetHash"].ToString(),
@@ -161,20 +163,17 @@ namespace ContractNotifyCollector.contract.task
                         mortgagePayments = long.Parse(p["mortgagePayments"].ToString()),
                         owner = jo["owner"].ToString(),
                         ttl = long.Parse(jo["TTL"].ToString()),
-                        starCount = calcStarCount(p["fullDomain"].ToString())
+                        starCount = calcStarCount(orderid)
                     };
                     mh.PutData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, info);
                 }
-
             });
         }
         private void handleOnOfferToBuyDiscontinued(List<JToken> rr, long blockindex)
         {
-            rr.ToList().ForEach(p => {
-                string fullDomain = p["fullDomain"].ToString();
-                string buyer = p["buyer"].ToString();
-
-                string findStr = new JObject { { "fullDomain", fullDomain }, { "buyer", buyer } }.ToString();
+            rr.ForEach(p =>
+            {
+                string findStr = new JObject { { "orderid", p["offerid"] } }.ToString();
                 mh.DeleteData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, findStr);
             });
         }
@@ -221,9 +220,9 @@ namespace ContractNotifyCollector.contract.task
             return queryRes[0];
         }
         //
-        private long calcStarCount(string fullDomain)
+        private long calcStarCount(string orderid)
         {
-            string findStr = new JObject { { "fullDomain", fullDomain }, { "state", "1" } }.ToString();
+            string findStr = new JObject { { "orderid", orderid }, { "state", StarState.Star_Yes } }.ToString();
             long count = mh.GetDataCount(localConn.connStr, localConn.connDB, dexStarStateCol, findStr);
             return count;
         }
@@ -231,23 +230,24 @@ namespace ContractNotifyCollector.contract.task
         {
             string starKey = "starCount.dexDomainSellState";
             long lt = getLastCalcTime(starKey);
-            if (lt == -1) return;
+            //if (lt == -1) return;
             string findStr = new JObject { { "lastUpdateTime", new JObject { { "$gt", lt } } } }.ToString();
             var queryRes = mh.GetData(localConn.connStr, localConn.connDB, dexStarStateCol, findStr);
             if (queryRes == null || queryRes.Count == 0) return;
 
-            var res = queryRes.GroupBy(p => p["fullDomain"], (k, g) =>
+            var res = queryRes.GroupBy(p => p["orderid"], (k, g) =>
             {
                 return new
                 {
-                    fullDomain = k.ToString(),
-                    lastUpdateTime = g.Sum(pg => long.Parse(pg["lastUpdateTime"].ToString()))
+                    orderid = k.ToString(),
+                    lastUpdateTime = g.Max(pg => long.Parse(pg["lastUpdateTime"].ToString()))
                 };
-            }).GroupBy(p => p.lastUpdateTime, (k, g) => {
+            }).GroupBy(p => p.lastUpdateTime, (k, g) =>
+            {
                 return new
                 {
                     lastUpdateTime = k,
-                    fullDomainSet = g
+                    orderidSet = g
                 };
             }).OrderBy(p => p.lastUpdateTime);
 
@@ -256,13 +256,14 @@ namespace ContractNotifyCollector.contract.task
             foreach (var item in res)
             {
 
-                foreach (var sub in item.fullDomainSet)
+                foreach (var sub in item.orderidSet)
                 {
                     // 获取最新的关注数量
-                    findStr = new JObject { { "fullDomain", sub.fullDomain }, { "state", "1" } }.ToString();
+                    findStr = new JObject { { "orderid", sub.orderid }, { "state", StarState.Star_Yes } }.ToString();
                     starCount = mh.GetDataCount(localConn.connStr, localConn.connDB, dexStarStateCol, findStr);
 
                     // 更新出售合约列表
+                    findStr = new JObject { { "orderid", sub.orderid } }.ToString();
                     updateStr = new JObject { { "$set", new JObject { { "starCount", starCount } } } }.ToString();
                     mh.UpdateData(localConn.connStr, localConn.connDB, dexDomainBuyStateCol, updateStr, findStr);
                 }
@@ -274,7 +275,7 @@ namespace ContractNotifyCollector.contract.task
         private void updateLastCalcTime(string key, long time)
         {
             string findStr = new JObject { { "key", key } }.ToString();
-            string updateStr = new JObject { { "lastUpdateTime", time } }.ToString();
+            string updateStr = new JObject { { "$set", new JObject { { "lastUpdateTime", time } } } }.ToString();
             mh.UpdateData(localConn.connStr, localConn.connDB, dexRecordTimeCol, updateStr, findStr);
         }
         private long getLastCalcTime(string key)
@@ -354,12 +355,11 @@ namespace ContractNotifyCollector.contract.task
         {
             LogHelper.ping(batchInterval, name());
         }
-
-
         [BsonIgnoreExtraElements]
         class DexMarketDataBuyInfo
         {
             public ObjectId _id { get; set; }
+            public string orderid { get; set; }
             public string fullHash { get; set; }
             public string fullDomain { get; set; }
             public string assetHash { get; set; }
@@ -372,8 +372,7 @@ namespace ContractNotifyCollector.contract.task
             public long ttl { get; set; }
             public long starCount { get; set; } = 0;
         }
+
     }
-
-
 }
 
