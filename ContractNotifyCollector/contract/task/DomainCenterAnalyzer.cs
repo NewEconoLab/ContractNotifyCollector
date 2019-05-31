@@ -363,12 +363,16 @@ namespace ContractNotifyCollector.core.task
                 string findStr = new JObject { {"namehash", p["fullHash"] } }.ToString();
                 var queryRes = mh.GetData(localConn.connStr, localConn.connDB, domainOwnerCol, findStr);
                 if (queryRes == null || queryRes.Count == 0) return;
-                
-                var dexLaunchFlag = p["displayName"].ToString() == "NNSauction" ? "1" : "0";
-                if (queryRes[0]["dexLaunchFlag"] != null && queryRes[0]["dexLaunchFlag"].ToString() == dexLaunchFlag) return;
 
                 var dexLaunchPrice = p["startPrice"];
-                string updateStr = new JObject { { "$set", new JObject { { "dexLaunchFlag", dexLaunchFlag },{ "dexLaunchPrice", dexLaunchPrice } } } }.ToString();
+                var dexLaunchOrderid = p["auctionid"].ToString();
+                var dexLaunchFlag = p["displayName"].ToString() == "NNSauction" ? "1" : "0";
+                if (queryRes[0]["dexLaunchFlag"] != null && queryRes[0]["dexLaunchFlag"].ToString() == dexLaunchFlag
+                    && queryRes[0]["dexLaunchOrderid"] != null && queryRes[0]["dexLaunchOrderid"].ToString() == dexLaunchOrderid
+                ) return;
+
+                
+                string updateStr = new JObject { { "$set", new JObject { { "dexLaunchFlag", dexLaunchFlag },{ "dexLaunchPrice", dexLaunchPrice },{ "dexLaunchOrderid", dexLaunchOrderid } } } }.ToString();
                 mh.UpdateData(localConn.connStr, localConn.connDB, domainOwnerCol, updateStr, findStr);
             });
         }
