@@ -34,6 +34,7 @@ namespace ContractNotifyCollector
         public static DbConnInfo localDbConnInfo;
         public static DbConnInfo blockDbConnInfo;
         public static DbConnInfo notifyDbConnInfo;
+        public static string nelApiWalletUrl;
         public static string nelApiUrl;
         public static bool fromApiFlag;
         private static void initDb()
@@ -44,6 +45,7 @@ namespace ContractNotifyCollector
             localDbConnInfo = getDbConnInfo(connInfo, 2);
             blockDbConnInfo = getDbConnInfo(connInfo, 3);
             notifyDbConnInfo = getDbConnInfo(connInfo, 4);
+            nelApiWalletUrl = connInfo["NELApiWalletUrl"].ToString();
             nelApiUrl = connInfo["NELApiUrl"].ToString();
             string flag = connInfo["fromApiFlag"].ToString();
             fromApiFlag = (flag == "1" || flag.ToLower() == "true");

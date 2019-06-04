@@ -7,8 +7,8 @@ namespace ContractNotifyCollector.helper
     class EmailHelper
     {
         public EmailConfig config { get; set; }
-        public void send(string messsage, string to) => send(messsage, config, to);
-        public void send(string message, EmailConfig config, string to)
+        public void send(string messsage, string to, bool isHtml=false) => send(messsage, config, to, isHtml);
+        public void send(string message, EmailConfig config, string to, bool isHtml=false)
         {
             //初始化
             var
@@ -38,7 +38,7 @@ namespace ContractNotifyCollector.helper
             msg.To.Add(new MailboxAddress("listener", toEmail));
 
             msg.Subject = config.subject;
-            msg.Body = new TextPart("plain") { Text = string.Format(config.body, message) };
+            msg.Body = new TextPart(isHtml ? "html":"plain") { Text = string.Format(config.body, message) };
 
             // 发送
             client.Send(msg);

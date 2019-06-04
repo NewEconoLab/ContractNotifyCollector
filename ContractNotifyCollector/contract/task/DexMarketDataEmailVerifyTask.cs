@@ -3,6 +3,7 @@ using ContractNotifyCollector.helper;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Linq;
+using System.Text;
 using System.Threading;
 
 namespace ContractNotifyCollector.contract.task
@@ -56,7 +57,7 @@ namespace ContractNotifyCollector.contract.task
         private void process()
         {
             string findStr = new JObject { { "verifyState", VerifyState.WaitSend } }.ToString();
-            string fieldStr = new JObject { { "email", 1},{ "_id",0} }.ToString();
+            string fieldStr = new JObject { { "address", 1}, { "email", 1 }, { "_id",0} }.ToString();
             string sortStr = new JObject { { "time", 1} }.ToString();
             var queryRes = mh.GetDataPagesWithField(localConn.connStr, localConn.connDB, dexEmailStateCol, fieldStr, batchSize, 1, sortStr, findStr);
             if (queryRes == null || queryRes.Count == 0) return;
@@ -65,10 +66,12 @@ namespace ContractNotifyCollector.contract.task
             foreach(var item in queryRes)
             {
                 // 生成验证码
-                string verifyUid = "123456";
+                string verifyUid = generateUid();
                 string email = item["email"].ToString();
+                string address = item["address"].ToString();
+                string verifyInfo = formatData(address, email, verifyUid);
                 // 发送
-                if(sendVerifyUid(verifyUid, email))
+                if (sendVerifyInfo(verifyInfo, email))
                 {
                     // 更新
                     updateStr = new JObject { { "$set", new JObject { { "verifyState", VerifyState.HaveSend }, { "verifyUid", verifyUid } } } }.ToString();
@@ -76,11 +79,35 @@ namespace ContractNotifyCollector.contract.task
                 }
             }
         }
-        private bool sendVerifyUid(string verifyUid, string toEmail)
+
+        private string formatData(string address, string email, string verifyUid)
+        {
+            //string VerifyUidUrl = "https://apiwallet.nel.group/api/testnet?jsonrpc=2.0&method=verifyEmail&params=[%22{0}%22,%22{1}%22,%22{2}%22]&id=1";
+            string verifyUidUrl = Config.nelApiWalletUrl;
+            if (verifyUidUrl.StartsWith("/"))
+            {
+                verifyUidUrl = verifyUidUrl.Substring(0, verifyUidUrl.Length-1);
+            }
+            verifyUidUrl += "?jsonrpc=2.0&method=verifyEmail&params=[%22{0}%22,%22{1}%22,%22{2}%22]&id=1";
+            return string.Format(verifyUidUrl, address, email, verifyUid);
+        }
+        private string generateUid()
+        {
+            string ss = "01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            int len = ss.Length;
+
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 8; ++i)
+            {
+                sb.Append(ss[new Random().Next(len)]);
+            }
+            return sb.ToString();
+        }
+        private bool sendVerifyInfo(string verifyInfo, string toEmail)
         {
             try
             {
-                eh.send(verifyUid, toEmail);
+                eh.send(verifyInfo, toEmail, true);
                 return true;
             } catch(Exception ex)
             {
