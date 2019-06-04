@@ -50,6 +50,7 @@ namespace ContractNotifyCollector.contract.task
             dexRecordTimeCol = cfg["dexRecordTimeCol"].ToString();
             dexStarStateCol = cfg["dexStarStateCol"].ToString();
             dexSellingAddr = cfg["dexSellingAddr"].ToString();
+            nnsSellingAddr = cfg["nnsSellingAddr"].ToString();
             //
             localConn = Config.localDbConnInfo;
             remoteConn = Config.remoteDbConnInfo;
