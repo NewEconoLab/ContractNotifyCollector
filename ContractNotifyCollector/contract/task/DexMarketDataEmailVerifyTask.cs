@@ -18,7 +18,6 @@ namespace ContractNotifyCollector.contract.task
         private DbConnInfo localConn;
         private bool initSuccFlag = false;
         private bool hasCreateIndex = false;
-        private bool firstRunFlag = true;
 
         public DexMarketDataEmailVerifyTask(string name) : base(name) { }
 
@@ -78,6 +77,10 @@ namespace ContractNotifyCollector.contract.task
                     mh.UpdateData(localConn.connStr, localConn.connDB, dexEmailStateCol, updateStr, findStr);
                 }
             }
+            if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, dexEmailStateCol, "{'address':1}", "i_address");
+            mh.setIndex(localConn.connStr, localConn.connDB, dexEmailStateCol, "{'verifyState':1}", "i_verifyState");
+            hasCreateIndex = true;
         }
 
         private string formatData(string address, string email, string verifyUid)

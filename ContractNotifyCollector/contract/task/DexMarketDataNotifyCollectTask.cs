@@ -20,15 +20,14 @@ namespace ContractNotifyCollector.contract.task
         private string domainOwnerCol;
         private string nnsSellingAddr = "AR5HjX5XfHTVXJCQQuAkYz47RgTUvn7mNr";
         private string dexSellingAddr = "Ae4hA91KNKV9jqCtPKdmcW42ixhSYzuH9S";
-        private int batchSize = 100;
-        private int batchInterval = 2000;
+        private int batchSize;
+        private int batchInterval;
 
         private DbConnInfo localConn;
         private DbConnInfo remoteConn;
         private DbConnInfo blockConn;
         private bool initSuccFlag = false;
         private bool hasCreateIndex = false;
-        private bool firstRunFlag = true;
 
         public DexMarketDataNotifyCollectTask(string name) : base(name) { }
 
@@ -107,6 +106,11 @@ namespace ContractNotifyCollector.contract.task
                 log(index, rh);
 
             }
+
+            if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, dexNotifyCollectStateCol, "{'txid':1}", "i_txid");
+            mh.setIndex(localConn.connStr, localConn.connDB, dexNotifyCollectStateCol, "{'notifyState':1}", "i_notifyState");
+            hasCreateIndex = true;
         }
         private void handleNNSbet(List<JToken> rr)
         {
@@ -229,7 +233,7 @@ namespace ContractNotifyCollector.contract.task
         }
         private bool tryGetNotifyEmail(string notifyAddress, out string NotifyEmail)
         {
-            string findStr = new JObject { { "address", notifyAddress }, { "activeState", "1" }, { "verifyState", "1" } }.ToString();
+            string findStr = new JObject { { "address", notifyAddress }, { "activeState", ActiveState.YES }, { "verifyState", VerifyState.YES } }.ToString();
             string fieldStr = new JObject { { "email", 1 }, { "_id", 1 } }.ToString();
             var queryRes = mh.GetDataWithField(localConn.connStr, localConn.connDB, dexEmailStateCol, fieldStr, findStr);
             if(queryRes == null || queryRes.Count == 0)
@@ -302,6 +306,11 @@ namespace ContractNotifyCollector.contract.task
         }
 
         
+    }
+    class ActiveState
+    {
+        public const string YES = "1";
+        public const string NOT = "0";
     }
     class NotifyType
     {

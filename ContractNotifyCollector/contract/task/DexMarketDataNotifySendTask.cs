@@ -19,14 +19,13 @@ namespace ContractNotifyCollector.contract.task
     class DexMarketDataNotifySendTask : ContractTask
     {
         private MongoDBHelper mh = new MongoDBHelper();
-        private string dexNotifyCollectStateCol = "dexNotifyCollectState";
-        private int batchSize = 100;
-        private int batchInterval = 2000;
+        private string dexNotifyCollectStateCol;
+        private int batchSize;
+        private int batchInterval;
 
         private DbConnInfo localConn;
         private bool initSuccFlag = false;
         private bool hasCreateIndex = false;
-        private bool firstRunFlag = true;
 
         public DexMarketDataNotifySendTask(string name) : base(name) { }
 
@@ -106,7 +105,10 @@ namespace ContractNotifyCollector.contract.task
                 }
                 hasProcessCount += res.Count();
             }
-            
+
+            if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, dexNotifyCollectStateCol, "{'notifyState':1}", "i_notifyState");
+            hasCreateIndex = true;
         }
 
         private void sendMsg(string data, string email)
