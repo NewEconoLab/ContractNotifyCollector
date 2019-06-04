@@ -21,6 +21,7 @@ namespace ContractNotifyCollector.contract.task
         private string dexRecordTimeCol;
         private string dexStarStateCol;
         private string dexSellingAddr;
+        private string nnsSellingAddr;
         private int batchInterval;
         private int batchSize;
 
@@ -49,6 +50,7 @@ namespace ContractNotifyCollector.contract.task
             dexRecordTimeCol = cfg["dexRecordTimeCol"].ToString();
             dexStarStateCol = cfg["dexStarStateCol"].ToString();
             dexSellingAddr = cfg["dexSellingAddr"].ToString();
+            nnsSellingAddr = cfg["nnsSellingAddr"].ToString();
             //
             localConn = Config.localDbConnInfo;
             remoteConn = Config.remoteDbConnInfo;
@@ -234,7 +236,11 @@ namespace ContractNotifyCollector.contract.task
         }
         private JToken getDomainTTL(string fullHash)
         {
-            string findStr = new JObject { { "namehash", fullHash } }.ToString();
+            //string findStr = new JObject { { "namehash", fullHash } }.ToString();
+            string findStr = new JObject { { "namehash", fullHash },{ "$and", new JArray {
+                new JObject { {"owner",new JObject { { "$ne", nnsSellingAddr }} }},
+                new JObject { {"owner",new JObject { { "$ne", dexSellingAddr }} }}
+            } } }.ToString();
             string fieldStr = new JObject { { "owner", 1 }, { "TTL", 1 } }.ToString();
             string sortStr = new JObject { { "blockindex", -1 } }.ToString();
             var queryRes = mh.GetDataPagesWithField(localConn.connStr, localConn.connDB, domainCenterHash, fieldStr, 1, 1, sortStr, findStr);
@@ -362,6 +368,7 @@ namespace ContractNotifyCollector.contract.task
             foreach (var jo in ja)
             {
                 if (jo["owner"].ToString() == dexSellingAddr) continue;
+                if (jo["owner"].ToString() == nnsSellingAddr) continue;
 
                 string fullHash = jo["namehash"].ToString();
                 string owner = jo["owner"].ToString();

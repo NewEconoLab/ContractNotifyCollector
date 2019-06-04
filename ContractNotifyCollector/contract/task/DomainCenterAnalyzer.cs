@@ -112,7 +112,7 @@ namespace ContractNotifyCollector.core.task
                 long endIndex = nextIndex < remoteHeight ? nextIndex : remoteHeight;
 
                 // 域名中心
-                JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } }, { "owner", new JObject() { { "$ne", nnsSellingAddr } } } };
+                JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } } };
                 JObject queryField = new JObject() { { "state", 0 } };
                 JArray queryRes = mh.GetDataWithField(remoteConn.connStr, remoteConn.connDB, domainCenterCol, queryField.ToString(), queryFilter.ToString());
                 if (queryRes != null && queryRes.Count() > 0)
