@@ -24,6 +24,8 @@ namespace ContractNotifyCollector
             {
                 config = JObject.Parse(File.ReadAllText(filename));
                 initDb();
+                initAddress();
+                initEmail();
             }
         }
 
@@ -87,10 +89,45 @@ namespace ContractNotifyCollector
         {
             return config["startNetType"].ToString();
         }
+
+        // Address
+        public static Address addressInfo;
+        public static void initAddress()
+        {
+            var cfg = config["AddressConfig"];
+            addressInfo = new Address
+            {
+                nnsSellingAddr = cfg["nnsSellingAddr"].ToString(),
+                dexSellingAddr = cfg["dexSellingAddr"].ToString()
+            };
+        }
+
+        // Email
+        public static EmailConfig emailInfo;
+        public static void initEmail()
+        {
+            var cfg = config["EmailConfig"];
+            emailInfo = new EmailConfig
+            {
+                mailFrom = cfg["mailFrom"].ToString(),
+                mailPwd = cfg["mailPwd"].ToString(),
+                smtpHost = cfg["smtpHost"].ToString(),
+                smtpPort = int.Parse(cfg["smtpPort"].ToString()),
+                smtpEnableSsl = bool.Parse(cfg["smtpEnableSsl"].ToString()),
+                subject = cfg["subject"].ToString(),
+                body = cfg["body"].ToString(),
+                listener = cfg["listener"].ToString(),
+            };
+        }
     }
     class DbConnInfo
     {
         public string connStr { set; get; }
         public string connDB { set; get; }
+    }
+    class Address
+    {
+        public string nnsSellingAddr { get; set; }
+        public string dexSellingAddr { get; set; }
     }
 }
