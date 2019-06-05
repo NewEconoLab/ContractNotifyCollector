@@ -80,6 +80,7 @@ namespace ContractNotifyCollector.contract.task
             if (hasCreateIndex) return;
             mh.setIndex(localConn.connStr, localConn.connDB, dexEmailStateCol, "{'address':1}", "i_address");
             mh.setIndex(localConn.connStr, localConn.connDB, dexEmailStateCol, "{'verifyState':1}", "i_verifyState");
+            mh.setIndex(localConn.connStr, localConn.connDB, dexEmailStateCol, "{'address':1,'email':1}", "i_address_email");
             hasCreateIndex = true;
         }
 
@@ -91,7 +92,7 @@ namespace ContractNotifyCollector.contract.task
             {
                 verifyUidUrl = verifyUidUrl.Substring(0, verifyUidUrl.Length-1);
             }
-            verifyUidUrl += "?jsonrpc=2.0&method=verifyEmail&params=[%22{0}%22,%22{1}%22,%22{2}%22]&id=1";
+            //verifyUidUrl += "?jsonrpc=2.0&method=verifyEmail&params=[%22{0}%22,%22{1}%22,%22{2}%22]&id=1";
             return string.Format(verifyUidUrl, address, email, verifyUid);
         }
         private string generateUid()
