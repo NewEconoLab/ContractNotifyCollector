@@ -158,6 +158,9 @@ namespace ContractNotifyCollector.contract.task
                 string notifyAddress = p["buyer"].ToString();
                 if (!tryGetNotifyEmail(notifyAddress, out string notifyEmail)) return;
 
+                string assetHash = p["assetHash"].ToString();
+                string assetName = getAssetName(assetHash);
+
                 long time = TimeHelper.GetTimeStamp();
                 string type = NotifyType.BuyDeal;
                 //
@@ -166,6 +169,7 @@ namespace ContractNotifyCollector.contract.task
                     { "txid", txid },
                     { "domain", fullDomain },
                     { "price", price},
+                    { "assetName", assetName},
                     { "notifyAddress", notifyAddress},
                     { "notifyEmail", notifyEmail},
                     { "notifyState", NotifyState.WaitSend},
@@ -186,6 +190,9 @@ namespace ContractNotifyCollector.contract.task
                 string fullDomain = p["fullDomain"].ToString();
                 string price = p["price"].ToString();
 
+                string assetHash = p["assetHash"].ToString();
+                string assetName = getAssetName(assetHash);
+
                 // 获取域名owner，除去nns.addr和dex.addr
                 string fullHash = p["fullHash"].ToString();
                 if (!tryGetNotifyAddress(fullHash, out string notifyAddress)) return;
@@ -199,6 +206,7 @@ namespace ContractNotifyCollector.contract.task
                     { "txid", txid },
                     { "domain", fullDomain },
                     { "price", price},
+                    { "assetName", assetName},
                     { "notifyAddress", notifyAddress},
                     { "notifyEmail", notifyEmail},
                     { "notifyState", NotifyState.WaitSend},
