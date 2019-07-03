@@ -33,6 +33,7 @@ namespace ContractNotifyCollector
         public static DbConnInfo remoteDbConnInfo;
         public static DbConnInfo localDbConnInfo;
         public static DbConnInfo blockDbConnInfo;
+        public static DbConnInfo analyDbConnInfo;
         public static DbConnInfo notifyDbConnInfo;
         public static string nelApiWalletUrl;
         public static string nelApiUrl;
@@ -44,7 +45,8 @@ namespace ContractNotifyCollector
             remoteDbConnInfo = getDbConnInfo(connInfo, 1);
             localDbConnInfo = getDbConnInfo(connInfo, 2);
             blockDbConnInfo = getDbConnInfo(connInfo, 3);
-            notifyDbConnInfo = getDbConnInfo(connInfo, 4);
+            analyDbConnInfo = getDbConnInfo(connInfo, 4);
+            notifyDbConnInfo = getDbConnInfo(connInfo, 5);
             nelApiWalletUrl = connInfo["NELApiWalletUrl"].ToString();
             nelApiUrl = connInfo["NELApiUrl"].ToString();
             string flag = connInfo["fromApiFlag"].ToString();
@@ -77,6 +79,14 @@ namespace ContractNotifyCollector
                 };
             }
             else if (flag == 4)
+            {
+                return new DbConnInfo
+                {
+                    connStr = conn["analyConnStr"].ToString(),
+                    connDB = conn["analyDatabase"].ToString()
+                };
+            }
+            else if (flag == 5)
             {
                 return new DbConnInfo
                 {

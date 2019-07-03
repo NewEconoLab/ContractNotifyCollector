@@ -13,13 +13,15 @@ namespace contractNotifyExtractor.Helper
             bool flag = true;
             if(flag)
             {
+                string resPrefix = "";
                 BigInteger b = new BigInteger(ThinNeo.Helper.HexString2Bytes(hexStr));
                 string bStr = b.ToString();
                 if(bStr.StartsWith("-"))
                 {
-                    return "-" + changeDecimals(BigInteger.Multiply(-1, b), decimals);
+                    b = BigInteger.Multiply(-1, b);
+                    resPrefix = "-";
                 }
-                return changeDecimals(b, decimals);
+                return resPrefix + changeDecimals(b, decimals);
 
             }
             //小头换大头
@@ -36,9 +38,18 @@ namespace contractNotifyExtractor.Helper
         //大整数文本转数值（考虑精度调整）
         public static string getNumStrFromIntStr(this string intStr, int decimals)
         {
+            string resPrefix = "";
+            if (intStr.StartsWith("-"))
+            {
+                intStr = intStr.Substring(1);
+                resPrefix = "-";
+            }
             BigInteger bi = BigInteger.Parse(intStr);
-
+            return resPrefix + changeDecimals(bi, decimals);
+            /*
+            BigInteger bi = BigInteger.Parse(intStr);
             return changeDecimals(bi, decimals);
+            */
         }
 
         //根据精度处理小数点（大整数模式处理）

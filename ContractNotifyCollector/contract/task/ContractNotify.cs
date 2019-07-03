@@ -267,6 +267,13 @@ namespace ContractNotifyCollector.core.task
                     {
                         // ByteArray + other
                         string value = jv["value"].ToString();
+                        try
+                        {
+                            var r = (JObject)notifyStruct[i]; ;
+                        } catch (Exception ex)
+                        {
+                            Console.WriteLine(ex.StackTrace);
+                        }
                         JObject taskEscape = (JObject)notifyStruct[i];
                         string taskName = taskEscape["name"].ToString();
                         updateAssetPricision(notifyInfo, taskEscape);
