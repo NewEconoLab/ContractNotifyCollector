@@ -254,6 +254,48 @@ namespace ContractNotifyCollector.helper
             client = null;
         }
 
-        
+        private string countFilterStr = new JObject { { "$group", new JObject { { "_id", 1 }, { "sum", new JObject { { "$sum", 1 } } } } } }.ToString();
+        public long AggregateCount(string mongodbConnStr, string mongodbDatabase, string coll, IEnumerable<string> collection, bool isUseDefaultGroup=true)
+        {
+            var res = Aggregate(mongodbConnStr, mongodbDatabase, coll, collection, isUseDefaultGroup);
+            if (res != null && res.Count > 0)
+            {
+                return long.Parse(res[0]["sum"].ToString());
+            }
+            return 0;
+        }
+
+        public JArray Aggregate(string mongodbConnStr, string mongodbDatabase, string coll, IEnumerable<string> collection, bool isGetCount = false)
+        {
+            IList<IPipelineStageDefinition> stages = new List<IPipelineStageDefinition>();
+            foreach (var item in collection)
+            {
+                stages.Add(new JsonPipelineStageDefinition<BsonDocument, BsonDocument>(item));
+            }
+            if (isGetCount)
+            {
+                stages.Add(new JsonPipelineStageDefinition<BsonDocument, BsonDocument>(countFilterStr));
+            }
+            PipelineDefinition<BsonDocument, BsonDocument> pipeline = new PipelineStagePipelineDefinition<BsonDocument, BsonDocument>(stages);
+            var queryRes = Aggregate(mongodbConnStr, mongodbDatabase, coll, pipeline);
+            if (queryRes != null && queryRes.Count > 0)
+            {
+                return JArray.Parse(queryRes.ToJson(new JsonWriterSettings { OutputMode = JsonOutputMode.Strict }));
+            }
+            return new JArray { };
+        }
+
+        public List<BsonDocument> Aggregate(string mongodbConnStr, string mongodbDatabase, string coll, PipelineDefinition<BsonDocument, BsonDocument> pipeline)
+        {
+            var client = new MongoClient(mongodbConnStr);
+            var database = client.GetDatabase(mongodbDatabase);
+            var collection = database.GetCollection<BsonDocument>(coll);
+            var query = collection.Aggregate(pipeline).ToList();
+
+            client = null;
+            return query;
+        }
+
+
     }
 }

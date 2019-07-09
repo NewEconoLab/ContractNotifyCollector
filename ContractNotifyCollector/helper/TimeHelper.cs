@@ -8,6 +8,7 @@ namespace ContractNotifyCollector.helper
     /// </summary>
     class TimeHelper
     {
+        public static long OneHourSecons = 60 * 60;
         public static long GetTimeStamp()
         {
             TimeSpan ts = DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, 0);

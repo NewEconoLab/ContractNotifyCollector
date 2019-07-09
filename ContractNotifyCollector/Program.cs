@@ -42,6 +42,7 @@ namespace ContractNotifyCollector
             AddTask(new DexMarketDataNotifyCollectTask("DexMarketDataNotifyCollectTask"));
             AddTask(new DexMarketDataNotifySendTask("DexMarketDataNotifySendTask"));
             AddTask(new ContractCallTask("ContractCallTask"));
+            AddTask(new SwapNodeTask("SwapNodeTask"));
         }
 
         /// <summary>

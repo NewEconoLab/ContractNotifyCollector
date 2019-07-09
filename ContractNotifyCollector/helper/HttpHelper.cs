@@ -26,5 +26,19 @@ namespace ContractNotifyCollector.helper
             byte[] retdata = await wc.UploadDataTaskAsync(url, "POST", data);
             return Encoding.UTF8.GetString(retdata);
         }
+
+
+        public static string Get(string url)
+        {
+            var Res = HttpGet(url);
+            return Res.Result;
+        }
+        public static async Task<string> HttpGet(string url)
+        {
+            WebClient wc = new WebClient();
+            wc.Headers["content-type"] = "text/plain;charset=UTF-8";
+            byte[] retdata = await wc.DownloadDataTaskAsync(url);
+            return Encoding.UTF8.GetString(retdata);
+        }
     }
 }
