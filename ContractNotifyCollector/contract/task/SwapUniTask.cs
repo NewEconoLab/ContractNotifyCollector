@@ -24,6 +24,7 @@ namespace ContractNotifyCollector.contract.task
         private DbConnInfo remoteConn;
         private DbConnInfo localConn;
         private bool initSuccFlag = false;
+        private bool hasCreateIndex = false;
 
         public SwapUniTask(string name) : base(name) { }
 
@@ -92,6 +93,10 @@ namespace ContractNotifyCollector.contract.task
                 updateL(index);
                 log(index, rh);
             }
+            if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, localState, "{'address':1,'contractHash':1}", "i_address_contractHash");
+            mh.setIndex(localConn.connStr, localConn.connDB, localState, "{'contractHash':1}", "i_contractHash");
+            hasCreateIndex = true;
         }
 
         private void handleUserInfo(JArray queryRes, long index, out List<UniUserInfo> res)

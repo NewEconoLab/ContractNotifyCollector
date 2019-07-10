@@ -12,18 +12,21 @@ namespace ContractNotifyCollector.contract.task
     {
         private MongoDBHelper mh = new MongoDBHelper();
 
+        private string remoteRecord;
+        private string remoteState;
+        private string localRecord = "swapRecord";
+        private string localState = "swapPoolInfo";
+
         private string nelRPCUrl;
-        private string schash;
-        private string nnchash;
-        private string nndhash;
-        private string poolColl = "swapPoolInfo";
         private string rateRPCUrl;
         private string rateColl = "swapExchangeRateInfo";
         private string priceRPCUrl;
         private string priceColl = "swapExchangePriceInfo";
+        private DbConnInfo remoteConn;
         private DbConnInfo localConn;
         private int batchInterval;
         private bool initSuccFlag = false;
+        private bool hasCreateIndex = false;
 
 
         public SwapNodeTask(string name):base(name) { }
@@ -32,15 +35,15 @@ namespace ContractNotifyCollector.contract.task
         {
             JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name() && p["taskNet"].ToString() == networkType()).ToArray()[0]["taskInfo"];
 
-            schash = cfg["schash"].ToString();
-            nnchash = cfg["nnchash"].ToString();
-            nndhash = cfg["nndhash"].ToString();
+            remoteRecord = cfg["remoteRecordCol"].ToString();
+            remoteState = cfg["remoteStateCol"].ToString();
             rateRPCUrl = cfg["rateRPCUrl"].ToString();
             priceRPCUrl = cfg["priceRPCUrl"].ToString();
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
 
             nelRPCUrl = Config.nelApiUrl;
-            localConn = Config.localDbConnInfo;
+            remoteConn = Config.notifyDbConnInfo;
+            localConn = Config.notifyDbConnInfo;
             initSuccFlag = true;
         }
         public override void startTask()
@@ -52,6 +55,9 @@ namespace ContractNotifyCollector.contract.task
                 {
                     ping();
                     process();
+                    processContract();
+                    processExchangeRate();
+                    processExchangePrice();
                 }
                 catch (Exception ex)
                 {
@@ -62,47 +68,166 @@ namespace ContractNotifyCollector.contract.task
             }
         }
 
-
         private void process()
         {
-            processContract();
-            processExchangeRate();
-            processExchangePrice();
+            var rh = getR();
+            var lh = getL();
+            if(lh >= rh)
+            {
+                log(lh, rh);
+                return;
+            }
+            for(long index=lh+1; index<=rh; ++index)
+            {
+                string findStr = new JObject { { "blockindex", index } }.ToString();
+                var queryRes = mh.GetData(remoteConn.connStr, remoteConn.connDB, remoteState, findStr);
+                if(queryRes.Count == 0)
+                {
+                    updateL(index);
+                    log(index, rh);
+                    continue;
+                }
+
+                handlePoolInfo(queryRes, index);
+                //
+                updateL(index);
+                log(index, rh);
+            }
+
+            if (hasCreateIndex) return;
+            mh.setIndex(localConn.connStr, localConn.connDB, localState, "{'tokenHash':1,'assetHash':1}", "i_tokenHash_assetHash");
+            mh.setIndex(localConn.connStr, localConn.connDB, localState, "{'validState':1,'contractHash':1,'time':1}", "i_validState_contractHash_time");
+            hasCreateIndex = true;
+        }
+
+        private void handlePoolInfo(JArray ja, long index)
+        {
+            foreach(var item in ja)
+            {
+                string displayName = item["displayName"].ToString();
+                string tokenHash = item["tokenHash"].ToString();
+                string assetHash = item["assetHash"].ToString();
+                string ratio = item["ratio"] != null ? item["ratio"].ToString():"0";
+                string exchangeFee = ((int)(decimal.Parse(ratio)*10000)).ToString();
+                string contractHash = item["exchangeContractHash"] != null ? item["exchangeContractHash"].ToString():"";
+
+                string findStr = new JObject { { "tokenHash", tokenHash },{ "assetHash", assetHash } }.ToString();
+                var queryRes = mh.GetData(localConn.connStr, localConn.connDB, localState, findStr);
+                if(queryRes.Count == 0)
+                {
+                    if (displayName == "removeExchange") continue;
+
+                    string newdata = new JObject {
+                        {"blockinex", index },
+                        {"tokenHash", tokenHash },
+                        {"assetHash", assetHash },
+                        {"ratio", ratio },
+                        {"exchangeFee", exchangeFee },
+                        {"contractHash", contractHash },
+                        {"tokenTotal", "0" },
+                        {"assetTotal", "0" },
+                        {"validState", ContractPairValidState.Valid},
+                        {"time", 0 }
+                    }.ToString();
+                    mh.PutData(localConn.connStr, localConn.connDB, localState, newdata);
+                    continue;
+                }
+
+                if(displayName == "setExchangeFee")
+                {
+                    string updateStr = new JObject { { "$set", new JObject {
+                        //{"blockinex", index },
+                        { "ratio", ratio},
+                        { "exchangeFee", exchangeFee},
+                        { "validState", ContractPairValidState.Valid},
+                    } } }.ToString();
+                    mh.UpdateData(localConn.connStr, localConn.connDB, localState, updateStr, findStr);
+                } 
+                if(displayName == "createExchange")
+                {
+                    string updateStr = new JObject { { "$set", new JObject {
+                        //{"blockinex", index },
+                        { "contractHash", contractHash},
+                        { "validState", ContractPairValidState.Valid},
+                    } } }.ToString();
+                    mh.UpdateData(localConn.connStr, localConn.connDB, localState, updateStr, findStr);
+                }
+                if(displayName == "removeExchange")
+                {
+                    string updateStr = new JObject { { "$set", new JObject {
+                        //{"blockinex", index },
+                        { "validState", ContractPairValidState.InValid},
+                    } } }.ToString();
+                    mh.UpdateData(localConn.connStr, localConn.connDB, localState, updateStr, findStr);
+                }
+            }
+        }
+        private void updateL(long index)
+        {
+            string findStr = new JObject { { "counter", localState } }.ToString();
+            string newdata = new JObject { { "counter", localState }, { "lastBlockindex", index } }.ToString();
+            if (mh.GetDataCount(localConn.connStr, localConn.connDB, localRecord, findStr) == 0)
+            {
+                mh.PutData(localConn.connStr, localConn.connDB, localRecord, newdata);
+            }
+            else
+            {
+                mh.ReplaceData(localConn.connStr, localConn.connDB, localRecord, newdata, findStr);
+            }
+        }
+        private long getL()
+        {
+            string findStr = new JObject { { "counter", localState } }.ToString();
+            var queryRes = mh.GetData(localConn.connStr, localConn.connDB, localRecord, findStr);
+            if (queryRes.Count == 0) return -1;
+            return long.Parse(queryRes[0]["lastBlockindex"].ToString());
+        }
+        private long getR()
+        {
+            string findStr = new JObject { { "counter", "notify" } }.ToString();
+            var queryRes = mh.GetData(remoteConn.connStr, remoteConn.connDB, remoteRecord, findStr);
+            if (queryRes.Count == 0) return -1;
+            return long.Parse(queryRes[0]["lastBlockindex"].ToString());
+        }
+        private void log(long localHeight, long remoteHeight)
+        {
+            Console.WriteLine(DateTime.Now + string.Format(" {0}.self processed at {1}/{2}", name(), localHeight, remoteHeight));
+        }
+        private void ping()
+        {
+            LogHelper.ping(batchInterval, name());
         }
 
         private void processContract()
         {
-            // 处理间隔时间2s
-            GetLiquidityInfo(schash, nndhash, nnchash, out string tokenTotal, out string assetTotal);
-            
+            while(true)
+            {
+                string findStr = new JObject { { "validState", ContractPairValidState.Valid },{ "contractHash", new JObject { { "$ne", ""} } },{ "time", new JObject { { "$lt", TimeHelper.GetTimeStamp() - 10/**/} } } }.ToString();
+                string sortStr = "{'time':1}";
+                var queryRes = mh.GetData(localConn.connStr, localConn.connDB, localState, findStr, sortStr, 0, 100);
+                if (queryRes.Count == 0) break;
 
-            string findStr = new JObject { { "hash", schash} }.ToString();
-            var queryRes = mh.GetData(localConn.connStr, localConn.connDB, poolColl, findStr);
-            if(queryRes == null ||queryRes.Count == 0)
-            {
-                string newdata = new JObject {
-                    {"hash", schash },
-                    {"tokenHash", nndhash },
-                    {"assetHash", nnchash },
-                    {"tokenTotal", tokenTotal },
-                    {"assetTotal", assetTotal },
-                    {"time", TimeHelper.GetTimeStamp() }
-                }.ToString();
-                mh.PutData(localConn.connStr, localConn.connDB, poolColl, newdata);
-                return;
-            } 
-            if(queryRes[0]["tokenTotal"].ToString() != tokenTotal 
-                || queryRes[0]["assetTotal"].ToString() != assetTotal
-                )
-            {
-                string updateStr = new JObject { {"$set", new JObject {
-                    {"tokenTotal",tokenTotal },
-                    {"assetTotal",assetTotal },
-                    {"time",TimeHelper.GetTimeStamp() }
-                } } }.ToString();
-                mh.UpdateData(localConn.connStr, localConn.connDB, poolColl, updateStr, findStr);
+                foreach(var item in queryRes)
+                {
+                    string tokenHash = item["tokenHash"].ToString();
+                    string assetHash = item["assetHash"].ToString();
+                    string contractHash = item["contractHash"].ToString();
+
+                    GetLiquidityInfo(contractHash, tokenHash, assetHash, out string tokenTotal, out string assetTotal);
+                    if(item["tokenTotal"].ToString() != tokenTotal
+                        || item["assetTotal"].ToString() != assetTotal)
+                    {
+                        string updateStr = new JObject { {"$set", new JObject {
+                            {"tokenTotal",tokenTotal },
+                            {"assetTotal",assetTotal },
+                            {"time",TimeHelper.GetTimeStamp() }
+                        } } }.ToString();
+                        mh.UpdateData(localConn.connStr, localConn.connDB, localState, updateStr, findStr);
+                    }
+                }
             }
         }
+        
         private void processExchangeRate()
         {
             // 处理间隔时间1h
@@ -201,10 +326,10 @@ namespace ContractNotifyCollector.contract.task
                 mh.PutData(localConn.connStr, localConn.connDB, priceColl, resJo.ToString()); ;
             }
         }
-
-        private void ping()
-        {
-            LogHelper.ping(batchInterval, name());
-        }
+    }
+    class ContractPairValidState
+    {
+        public const string Valid = "1";
+        public const string InValid = "0";
     }
 }
