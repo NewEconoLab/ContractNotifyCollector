@@ -146,8 +146,8 @@ namespace ContractNotifyCollector.contract.task
             var resRe = (JArray)resJo["result"][0]["stack"];
             var v1 = resRe[0]["value"].ToString();
             var v2 = resRe[1]["value"].ToString();
-            tokenTotal = v1.getNumStrFromHexStr(2);
-            assetTotal = v2.getNumStrFromHexStr(8);
+            tokenTotal = v1.getNumStrFromHexStr(0);
+            assetTotal = v2.getNumStrFromHexStr(0);
         }
         private string toHashParam(string hash)
         {
