@@ -1,11 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using ContractNotifyCollector.contract.task;
 using ContractNotifyCollector.core;
 using ContractNotifyCollector.core.task;
 using ContractNotifyCollector.helper;
-using MongoDB.Driver;
 
 /// <summary>
 /// 合约汇总进程
@@ -43,6 +41,7 @@ namespace ContractNotifyCollector
             AddTask(new DexMarketDataNotifySendTask("DexMarketDataNotifySendTask"));
             AddTask(new ContractCallTask("ContractCallTask"));
             AddTask(new SwapNodeTask("SwapNodeTask"));
+            AddTask(new SwapUniTask("SwapUniTask"));
         }
 
         /// <summary>
