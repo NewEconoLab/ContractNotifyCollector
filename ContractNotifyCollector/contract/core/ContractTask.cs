@@ -41,7 +41,7 @@ namespace ContractNotifyCollector.core
                 LogHelper.printLog("InitTask success:" + name() + "_" + networkType());
             } catch(Exception ex)
             {
-                LogHelper.printLog("InitTask failed:" + name() + "_" + networkType() + ",exMsg:" + ex.Message);
+                LogHelper.printLog("InitTask failed:" + name() + "_" + networkType() + ",exMsg:" + ex.Message + ",exStack:" + ex.StackTrace);
             }
         }
         public abstract void initConfig(JObject config);
