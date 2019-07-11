@@ -216,6 +216,7 @@ namespace ContractNotifyCollector.contract.task
                     GetLiquidityInfo(contractHash, tokenHash, assetHash, out string tokenTotal, out string assetTotal);
                     if (tokenTotal == "0" && assetTotal == "0") continue;
 
+                    findStr = new JObject { {"tokenHash", tokenHash },{ "assetHash", assetHash} }.ToString();
                     //if(item["tokenTotal"].ToString() != tokenTotal
                     //    || item["assetTotal"].ToString() != assetTotal)
                     {
