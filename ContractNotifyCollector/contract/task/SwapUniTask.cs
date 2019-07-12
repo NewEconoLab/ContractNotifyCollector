@@ -15,8 +15,8 @@ namespace ContractNotifyCollector.contract.task
     {
         private MongoDBHelper mh = new MongoDBHelper();
 
-        private string remoteRecord;
-        private string remoteState;
+        //private string remoteRecord;
+        //private string remoteState;
         private string localRecord = "swapRecord";
         private string localState = "swapUniUserState";
         private string localPoolState = "swapUniPoolState";
@@ -32,8 +32,8 @@ namespace ContractNotifyCollector.contract.task
         {
             JToken cfg = config["TaskList"].Where(p => p["taskName"].ToString() == name() && p["taskNet"].ToString() == networkType()).ToArray()[0]["taskInfo"];
 
-            remoteRecord = cfg["remoteRecordCol"].ToString();
-            remoteState = cfg["remoteStateCol"].ToString();
+            //remoteRecord = cfg["remoteRecordCol"].ToString();
+            //remoteState = cfg["remoteStateCol"].ToString();
             batchInterval = int.Parse(cfg["batchInterval"].ToString());
 
             remoteConn = Config.notifyDbConnInfo;
@@ -68,27 +68,27 @@ namespace ContractNotifyCollector.contract.task
                 log(lh, rh);
                 return;
             }
-            for(long index=lh+1; index <= rh; ++index)
+
+            var hashs = getPoolHashArr();
+            for (long index=lh+1; index <= rh; ++index)
             {
                 string findStr = new JObject { { "blockindex", index }, { "$or", new JArray {
                     new JObject { { "displayName", "addLiquidity" } },
                     new JObject { { "displayName", "removeLiquidity" } }
                 } } }.ToString();
 
-                var queryRes = mh.GetData(remoteConn.connStr, remoteConn.connDB, remoteState, findStr);
-                if(queryRes.Count == 0)
+                foreach(var hash in hashs)
                 {
-                    updateL(index);
-                    log(index, rh);
-                    continue;
+                    var queryRes = mh.GetData(remoteConn.connStr, remoteConn.connDB, hash, findStr);
+                    if (queryRes.Count > 0)
+                    {
+                        // 用户
+                        handleUserInfo(queryRes, index, out List<UniUserInfo> res);
+
+                        // 总额
+                        handlePoolInfo(res, index);
+                    }
                 }
-
-                // 用户
-                handleUserInfo(queryRes, index, out List<UniUserInfo> res);
-
-                // 总额
-                handlePoolInfo(res, index);
-
                 //
                 updateL(index);
                 log(index, rh);
@@ -99,6 +99,14 @@ namespace ContractNotifyCollector.contract.task
             hasCreateIndex = true;
         }
 
+        private string[] getPoolHashArr()
+        {
+            string findStr = new JObject { {"contractHash", new JObject { { "$ne", ""} } } }.ToString();
+            string fieldStr = new JObject { { "contractHash", 1 }, { "_id", 0 } }.ToString();
+            var queryRes = mh.GetDataWithField(remoteConn.connStr, remoteConn.connDB, "swapPoolInfo", fieldStr, findStr);
+            if (queryRes.Count == 0) return null;
+            return queryRes.Select(p => p["contractHash"].ToString()).Distinct().ToArray();
+        }
         private void handleUserInfo(JArray queryRes, long index, out List<UniUserInfo> res)
         {
             res =
@@ -227,8 +235,8 @@ namespace ContractNotifyCollector.contract.task
         }
         private long getR()
         {
-            string findStr = new JObject { { "counter", "notify" } }.ToString();
-            var queryRes = mh.GetData(remoteConn.connStr, remoteConn.connDB, remoteRecord, findStr);
+            string findStr = new JObject { { "counter", "swapPoolInfo" } }.ToString();
+            var queryRes = mh.GetData(remoteConn.connStr, remoteConn.connDB, "swapRecord", findStr);
             if (queryRes.Count == 0) return -1;
             return long.Parse(queryRes[0]["lastBlockindex"].ToString());
         }
