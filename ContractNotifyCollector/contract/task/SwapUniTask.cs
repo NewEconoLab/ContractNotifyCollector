@@ -149,6 +149,7 @@ namespace ContractNotifyCollector.contract.task
                 if (subres[0].blockindex < index)
                 {
                     // replace
+                    item._id = subres[0]._id;
                     item.uniMinted = (item.uniMinted.format() + subres[0].uniMinted.format()).format();
                     mh.ReplaceData<UniUserInfo>(localConn.connStr, localConn.connDB, localState, item, substr);
                     continue;
@@ -181,6 +182,7 @@ namespace ContractNotifyCollector.contract.task
                 if (subres[0].blockindex < index)
                 {
                     // replace
+                    item._id = subres[0]._id;
                     item.uniMinted = (item.uniMinted.format() + subres[0].uniMinted.format()).format();
                     mh.ReplaceData<UniPoolInfo>(localConn.connStr, localConn.connDB, localPoolState, item, substr);
                     continue;
