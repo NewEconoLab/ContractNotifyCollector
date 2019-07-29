@@ -170,7 +170,7 @@ Modify the configuration file under the execution file, the configuration file i
         {
           "name": "field name",
           "type": "field type",
-          "escape": "transfer field type"
+          "escape": "transfer field type",
           "decimals": "precision"
         }
       ],
