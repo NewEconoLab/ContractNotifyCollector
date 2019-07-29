@@ -76,9 +76,8 @@ git clone https://github.com/NewEconoLab/ContractNotifyCollector.git
           "name": "字段名称",
           "type": "通知类型",
           "escape": "转化类型",
-          "decimals": 精度
-        },
-        ...
+          "decimals": "精度"
+        }
       ],
       "memo": ""
     },
@@ -128,7 +127,7 @@ Modify the configuration file under the execution file, the configuration file i
   "DBConnInfoList": [
     {
       "netType": "network type",
-      "blockConnStr":"basic database connectString address"
+      "blockConnStr":"basic database connectString address",
       "blockDatabase":"basic database name",
       "analyConnStr":"analysis database connectString address",
       "analyDatabase":"analysis database name",
@@ -138,12 +137,13 @@ Modify the configuration file under the execution file, the configuration file i
     }
   ],
   "TaskList": [
-    "taskNet":"task network",
-    "taskName":"task name",
-    "taskInfo":{
-      "key1":"value1",
-      "key2":"value2",
-       ...
+    {
+      "taskNet":"task network",
+      "taskName":"task name",
+      "taskInfo":{
+        "key1":"value1",
+        "key2":"value2"
+      }
     }
   ]
 }
@@ -172,8 +172,7 @@ Modify the configuration file under the execution file, the configuration file i
           "type": "field type",
           "escape": "transfer field type"
           "decimals": "precision"
-        },
-        ...
+        }
       ],
       "memo": ""
     },
