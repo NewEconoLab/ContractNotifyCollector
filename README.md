@@ -81,6 +81,8 @@ git clone https://github.com/NewEconoLab/ContractNotifyCollector.git
       ],
       "memo": ""
     },
+  ]
+}
 ```
 
 
@@ -176,6 +178,8 @@ Modify the configuration file under the execution file, the configuration file i
       ],
       "memo": ""
     },
+  ]
+}    
 ```
 
 Compile and run :
