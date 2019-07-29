@@ -87,8 +87,8 @@ git clone https://github.com/NewEconoLab/ContractNotifyCollector.git
 编译并运行
 ```
 dotnet publish
-cd  NeoBlock-Mongo-Storage/NeoBlockMongoStorage/NeoBlockMongoStorage/bin/Debug/netcoreapp2.0
-dotnet NeoBlock-Mongo-Storage.dll
+cd  ContractNotifyCollector/ContractNotifyCollector/ContractNotifyCollector/bin/Debug/netcoreapp2.0
+dotnet ContractNotifyCollector.dll
 ```
 
 ### 依赖工程
@@ -181,8 +181,8 @@ Modify the configuration file under the execution file, the configuration file i
 Compile and run :
 ```
 dotnet publish
-cd  NeoBlock-Mongo-Storage/NeoBlockMongoStorage/NeoBlockMongoStorage/bin/Debug/netcoreapp2.0
-dotnet NeoBlock-Mongo-Storage.dll
+cd  ContractNotifyCollector/ContractNotifyCollector/ContractNotifyCollector/bin/Debug/netcoreapp2.0
+dotnet ContractNotifyCollector.dll
 ```
 
 ### dependency project
