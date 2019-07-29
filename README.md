@@ -32,7 +32,7 @@ git clone https://github.com/NewEconoLab/ContractNotifyCollector.git
   "DBConnInfoList": [
     {
       "netType": "网络类型",
-      "blockConnStr": "基础数据库连接地址"
+      "blockConnStr": "基础数据库连接地址",
       "blockDatabase": "基础数据库名称",
       "analyConnStr": "分析数据库连接地址",
       "analyDatabase": "分析数据库名称",
@@ -42,11 +42,13 @@ git clone https://github.com/NewEconoLab/ContractNotifyCollector.git
     }
   ],
   "TaskList":  [
-    "taskNet": "任务网络类型",
-    "taskName": "任务名称",
-    "taskInfo": {
-      "key1": "value1",
-      "key2": "value2"
+    {
+      "taskNet": "任务网络类型",
+      "taskName": "任务名称",
+      "taskInfo": {
+        "key1": "value1",
+        "key2": "value2"
+      }
     }
   ]
 }
