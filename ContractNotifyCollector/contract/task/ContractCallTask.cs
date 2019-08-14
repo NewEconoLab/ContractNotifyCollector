@@ -165,7 +165,7 @@ namespace ContractNotifyCollector.contract.task
             var findJo = new JObject { { "contractHash", hash } };
             if(isOnly24h)
             {
-                findJo.Add("blockindex", new JObject { { "$gte", indexBefore24h } });
+                findJo.Add("blockIndex", new JObject { { "$gte", indexBefore24h } });
             }
             return mh.GetDataCount(remoteConn.connStr, remoteConn.connDB, "contract_call_info", findJo.ToString());
         }
