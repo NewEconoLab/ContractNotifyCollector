@@ -167,7 +167,7 @@ namespace ContractNotifyCollector.contract.task
             {
                 findJo.Add("blockindex", new JObject { { "$gte", indexBefore24h } });
             }
-            return mh.GetDataCount(blockConn.connStr, blockConn.connDB, "contract_call_info", findJo.ToString());
+            return mh.GetDataCount(remoteConn.connStr, remoteConn.connDB, "contract_call_info", findJo.ToString());
         }
         private long getUsrCount(string hash, bool isOnly24h=false, long indexBefore24h = 0)
         {
