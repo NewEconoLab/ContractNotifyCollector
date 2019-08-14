@@ -162,7 +162,7 @@ namespace ContractNotifyCollector.contract.task
         }
         private long getTxCount(string hash, bool isOnly24h=false, long indexBefore24h=0)
         {
-            var findJo = new JObject { { "asset", hash } };
+            var findJo = new JObject { { "contractHash", hash } };
             if(isOnly24h)
             {
                 findJo.Add("blockindex", new JObject { { "$gte", indexBefore24h } });
@@ -179,6 +179,7 @@ namespace ContractNotifyCollector.contract.task
             var list = new List<string>();
             list.Add(new JObject { { "$match", findJo} }.ToString());
             list.Add(new JObject { { "$group", new JObject { { "_id", "$address" }, { "sum", new JObject { { "$sum", 1 } } } } } }.ToString());
+            list.Add(new JObject { { "$group", new JObject { { "_id", "$_id" }, { "sum", new JObject { { "$sum", 1 } } } } } }.ToString());
             return mh.AggregateCount(remoteConn.connStr, remoteConn.connDB, "contract_call_info", list, false);
         }
         private long getBlockHeightBefore24h()
