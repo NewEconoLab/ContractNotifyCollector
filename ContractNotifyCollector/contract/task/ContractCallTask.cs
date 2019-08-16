@@ -126,7 +126,7 @@ namespace ContractNotifyCollector.contract.task
                 if (subRes == null || subRes.Count == 0) continue;
 
                 subfindStr = "{'hash':'" + item["hash"] + "'}";
-                subupdateStr = new JObject { { "$set", new JObject { { "createDate", (long)subRes[0]["sstime"] },{ "createIndex", (long)subRes[0]["blockIndex"]} } } }.ToString();
+                subupdateStr = new JObject { { "$set", new JObject { { "createDate", (long)subRes[0]["time"] },{ "createIndex", (long)subRes[0]["blockIndex"]} } } }.ToString();
                 mh.UpdateData(localConn.connStr, localConn.connDB, lColl, subupdateStr, subfindStr);
             }
         }
