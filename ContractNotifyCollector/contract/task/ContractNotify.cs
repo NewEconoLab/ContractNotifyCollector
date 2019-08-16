@@ -212,6 +212,7 @@ namespace ContractNotifyCollector.core.task
             int n = 0;
             foreach (JObject notification in notifications)
             {
+                try { 
                 string contractHash = notification["contract"].ToString();
                 if (!hasKey(contractHash))
                 {
@@ -296,6 +297,10 @@ namespace ContractNotifyCollector.core.task
                 list.Add(notifyInfo);
 
                 ++n;
+                } catch
+                {
+                    ++n;
+                }
             }
             return list;
         }
