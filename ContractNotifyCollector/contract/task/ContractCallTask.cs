@@ -179,7 +179,7 @@ namespace ContractNotifyCollector.contract.task
             var list = new List<string>();
             list.Add(new JObject { { "$match", findJo} }.ToString());
             list.Add(new JObject { { "$group", new JObject { { "_id", "$address" }, { "sum", new JObject { { "$sum", 1 } } } } } }.ToString());
-            list.Add(new JObject { { "$group", new JObject { { "_id", "$_id" }, { "sum", new JObject { { "$sum", 1 } } } } } }.ToString());
+            list.Add(new JObject { { "$group", new JObject { { "_id", "$id" }, { "sum", new JObject { { "$sum", 1 } } } } } }.ToString());
             return mh.AggregateCount(remoteConn.connStr, remoteConn.connDB, "contract_call_info", list, false);
         }
         private long getBlockHeightBefore24h()
