@@ -52,7 +52,7 @@ namespace ContractNotifyCollector.core.task
             domainFixedSellingCol = cfg["domainFixedSellingCol"].ToString();
             domainCreditCol = cfg["domainCreditCol"].ToString();
             domainRecord = cfg["domainRecord"].ToString();
-            domainOwnerCol = cfg["domainOwnerCol"].ToString();
+            domainOwnerCol = cfg["domainOwnerCol"].ToString() + "_test";
             nnsSellingAddr = cfg["nnsSellingAddr"].ToString();
             dexContractHash = cfg["dexContractHash"].ToString();
             dexSellingAddr = cfg["dexSellingAddr"].ToString();
@@ -75,7 +75,7 @@ namespace ContractNotifyCollector.core.task
                 {
                     ping();
                     process();
-                    processDomainDex();
+                    //processDomainDex();
                 }
                 catch (Exception ex)
                 {
@@ -99,6 +99,15 @@ namespace ContractNotifyCollector.core.task
 
             // 获取本地已处理高度
             long localHeight = getLocalHeight();
+            localHeight = 2775815;
+            localHeight = 2790178;
+            localHeight = 2839178;
+            localHeight = 2848178;
+            localHeight = 3094178;
+            localHeight = 3546863;
+
+            batchSize = 2000;
+            hasCreateIndex = true;
 
             // 
             if (remoteHeight <= localHeight)
@@ -115,6 +124,7 @@ namespace ContractNotifyCollector.core.task
                 JObject queryFilter = new JObject() { { "blockindex", new JObject() { { "$gt", index }, { "$lte", endIndex } } } };
                 JObject queryField = new JObject() { { "state", 0 } };
                 JArray queryRes = mh.GetDataWithField(remoteConn.connStr, remoteConn.connDB, domainCenterCol, queryField.ToString(), queryFilter.ToString());
+                
                 if (queryRes != null && queryRes.Count() > 0)
                 {
                     //processDomainCenter(queryRes);
@@ -160,7 +170,7 @@ namespace ContractNotifyCollector.core.task
                     processDomainCredit(queryRes);
                 }
 
-                updateRecord(endIndex);
+                //updateRecord(endIndex);
                 log(endIndex, remoteHeight);
                 if (!hasCreateIndex) break ;
             }
@@ -175,7 +185,176 @@ namespace ContractNotifyCollector.core.task
             hasCreateIndex = true;
         }
 
-        private void processDomainCenter(JToken[] domainCenterRes)
+        private void processDomainCenter(JToken[] res)
+        {
+            var pRes = res.GroupBy(p => p["namehash"].ToString(), (k, g) => new { namehash = k.ToString(), item = g.OrderByDescending(pg => long.Parse(pg["blockindex"].ToString())).OrderByDescending(pg => long.Parse(pg["TTL"].ToString())).First() }).ToArray();
+            foreach (var pItem in pRes)
+            {
+                var namehash = pItem.namehash;
+                var item = pItem.item;
+                var findStr = new JObject { { "namehash", namehash } }.ToString();
+                var queryRes = mh.GetData(localConn.connStr, localConn.connDB, domainOwnerCol, findStr);
+                if(queryRes.Count == 0)
+                {
+                    var jo = (JObject)item;
+                    jo.Remove("_id");
+                    jo["TTL"] = long.Parse(jo["TTL"].ToString());
+                    jo["newdomainIndex"] = long.Parse(jo["blockindex"].ToString());
+                    jo["fulldomain"] = getFullDomain(jo["domain"].ToString(), jo["parenthash"].ToString());
+                    jo["protocol"] = "";
+                    jo["data"] = "";
+                    jo["bindflag"] = "0";
+                    mh.PutData(localConn.connStr, localConn.connDB, domainOwnerCol, jo.ToString());
+                    continue;
+                }
+
+                var olddata = queryRes[0];
+                bool flag = false;
+                var updateJo = new JObject();
+                var tp = item["blockindex"].ToString();
+                if (olddata["blockindex"].ToString() != tp)
+                {
+                    updateJo["blockindex"] = long.Parse(tp);
+                    flag = true;
+                }
+                tp = item["txid"].ToString();
+                if (olddata["txid"].ToString() != tp)
+                {
+                    updateJo["txid"] = tp;
+                    flag = true;
+                }
+                tp = item["vmstate"].ToString();
+                if (olddata["vmstate"].ToString() != tp)
+                {
+                    updateJo["vmstate"] = tp;
+                    flag = true;
+                }
+                tp = item["contractHash"].ToString();
+                if (olddata["contractHash"].ToString() != tp)
+                {
+                    updateJo["contractHash"] = tp;
+                    flag = true;
+                }
+                tp = item["owner"].ToString();
+                if (olddata["owner"].ToString() != tp)
+                {
+                    updateJo["owner"] = tp;
+                    flag = true;
+                }
+                tp = item["register"].ToString();
+                if (olddata["register"].ToString() != tp)
+                {
+                    updateJo["register"] = tp;
+                    flag = true;
+                }
+                tp = item["resolver"].ToString();
+                if (olddata["resolver"].ToString() != tp)
+                {
+                    updateJo["resolver"] = tp;
+                    flag = true;
+                }
+                tp = item["parentOwner"].ToString();
+                if (olddata["parentOwner"].ToString() != tp)
+                {
+                    updateJo["parentOwner"] = tp;
+                    flag = true;
+                }
+                tp = item["newdomain"].ToString();
+                if (olddata["newdomain"].ToString() != tp)
+                {
+                    updateJo["newdomain"] = tp;
+                    if("1" == tp)
+                    {
+                        updateJo["newdomainIndex"] = long.Parse(item["blockindex"].ToString());
+                        updateJo["protocol"] = "";
+                        updateJo["data"] = "";
+                    }
+                    flag = true;
+                }
+
+                var newTTL = long.Parse(item["TTL"].ToString());
+                var oldTTL = long.Parse(olddata["TTL"].ToString());
+                if (newTTL > oldTTL)
+                {
+                    updateJo["TTL"] = newTTL;
+                    flag = true;
+                }
+                if (flag)
+                {
+                    var updateStr = new JObject { { "$set", updateJo } }.ToString();
+                    mh.UpdateData(localConn.connStr, localConn.connDB, domainOwnerCol, updateStr, findStr);
+                }
+
+            }
+        }
+        private Dictionary<string, string> domainDict = new Dictionary<string, string>();
+        private string getFullDomain(string domain, string parenthash)
+        {
+            string key = parenthash;
+            if(!domainDict.ContainsKey(key))
+            {
+                if(key == "")
+                {
+                    domainDict.Add(key, "");
+                } else
+                {
+                    var findStr = new JObject { { "namehash", key } }.ToString();
+                    var fieldStr = new JObject { { "domain", 1 } }.ToString();
+                    var queryRes = mh.GetDataPagesWithField(localConn.connStr, localConn.connDB, domainOwnerCol, fieldStr, 1, 1, "{}", findStr);
+                    if (queryRes.Count == 0) throw new Exception("Not find domain by namehash:"+parenthash);
+
+                    var root = queryRes[0]["domain"].ToString();
+                    domainDict.Add(key, root);
+                }
+            }
+            var val = domainDict.GetValueOrDefault(key);
+            if (val == "") return domain;
+            return domain + "." + val;
+        }
+        
+        private void procesDomainResolver(JArray res)
+        {
+            var pRes = res.GroupBy(p => p["namehash"].ToString(), (k, g) => new { namehash = k.ToString(), item = g.OrderByDescending(pg => long.Parse(pg["blockindex"].ToString())).First() }).ToArray();
+            foreach(var pItem in pRes)
+            {
+                var namehash = pItem.namehash;
+                var item = pItem.item;
+                var findStr = new JObject { { "namehash", namehash } }.ToString();
+                var queryRes = mh.GetData(localConn.connStr, localConn.connDB, domainOwnerCol, findStr);
+                if (queryRes.Count == 0) continue;
+                var qItem = queryRes[0];
+
+                bool flag = false;
+                var updateJo = new JObject();
+
+                var blockindex = long.Parse(item["blockindex"].ToString());
+                if(long.Parse(qItem["newdomainIndex"].ToString()) > blockindex)
+                {
+                    continue;
+                }
+
+                var newProtocol = item["protocol"].ToString();
+                if(qItem["protocol"].ToString() != newProtocol)
+                {
+                    updateJo.Add("protocol", newProtocol);
+                    flag = true;
+                }
+                var newData = item["data"].ToString();
+                if (qItem["data"].ToString() != newData)
+                {
+                    updateJo.Add("data", newData);
+                    flag = true;
+                }
+                if(flag)
+                {
+                    var updateStr = new JObject { { "$set", updateJo } }.ToString();
+                    mh.UpdateData(localConn.connStr, localConn.connDB, domainOwnerCol, updateStr, findStr);
+                }
+            }
+        }
+
+
+        private void processDomainCenter_(JToken[] domainCenterRes)
         {
             var pRes = domainCenterRes.GroupBy(p => p["namehash"].ToString(), (k, g) => new { namehash = k.ToString(), item = g.OrderByDescending(pg => long.Parse(pg["blockindex"].ToString())).First() }).ToArray();
             foreach(var item in pRes)
@@ -248,8 +427,7 @@ namespace ContractNotifyCollector.core.task
             }
 
         }
-
-        private void procesDomainResolver(JArray domainResolverRes)
+        private void procesDomainResolver_(JArray domainResolverRes)
         {
             var pRes = domainResolverRes.GroupBy(p => p["namehash"].ToString(), (k, g) => new { namehash = k.ToString(), item = g.OrderByDescending(pg => long.Parse(pg["blockindex"].ToString())).First() }).ToArray();
             foreach (var item in pRes)
@@ -317,6 +495,7 @@ namespace ContractNotifyCollector.core.task
             }).ToList();
             foreach(JObject jo in res)
             {
+                /*
                 string findStr = new JObject() { { "owner", jo["addr"] }, { "bindflag", "1" } }.ToString();
                 string updateStr = new JObject() { {"$set", new JObject() { { "bindflag", "0"}  } } }.ToString();
                 mh.UpdateData(localConn.connStr, localConn.connDB, domainOwnerCol, updateStr, findStr);
@@ -326,11 +505,35 @@ namespace ContractNotifyCollector.core.task
                     updateStr = new JObject() { { "$set", new JObject() { { "bindflag", "1" } } } }.ToString();
                     mh.UpdateData(localConn.connStr, localConn.connDB, domainOwnerCol, updateStr, findStr);
                 }
+                */
+                var findStr = new JObject() { { "owner", jo["addr"] }}.ToString();
+                var queryRes = mh.GetData(localConn.connStr, localConn.connDB, domainOwnerCol, findStr);
+                if (queryRes.Count == 0) continue;
+
+                var qItem = queryRes[0];
+                var bindflag = qItem["bindflag"].ToString();
+                var displayName = jo["displayName"].ToString();
+                bool flag = false;
+                if(bindflag == "1" && displayName != "addrCreditRegistered")
+                {
+                    bindflag = "0";
+                    flag = true;
+                }
+                if(bindflag == "0" && displayName == "addrCreditRegistered")
+                {
+                    bindflag = "1";
+                    flag = true;
+                }
+                if(flag)
+                {
+                    findStr = new JObject() { { "namehash", jo["namehash"] } }.ToString();
+                    var updateStr = new JObject() { { "$set", new JObject() { { "bindflag", bindflag } } } }.ToString();
+                    mh.UpdateData(localConn.connStr, localConn.connDB, domainOwnerCol, updateStr, findStr);
+                }
             }
         }
 
 
-        
         private void processDomainDex()
         {
             string subCounter = ".dexDomainSell";
