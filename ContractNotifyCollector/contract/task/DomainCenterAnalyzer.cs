@@ -52,7 +52,7 @@ namespace ContractNotifyCollector.core.task
             domainFixedSellingCol = cfg["domainFixedSellingCol"].ToString();
             domainCreditCol = cfg["domainCreditCol"].ToString();
             domainRecord = cfg["domainRecord"].ToString();
-            domainOwnerCol = cfg["domainOwnerCol"].ToString() + "_test";
+            domainOwnerCol = cfg["domainOwnerCol"].ToString();
             nnsSellingAddr = cfg["nnsSellingAddr"].ToString();
             dexContractHash = cfg["dexContractHash"].ToString();
             dexSellingAddr = cfg["dexSellingAddr"].ToString();
@@ -99,14 +99,8 @@ namespace ContractNotifyCollector.core.task
 
             // 获取本地已处理高度
             long localHeight = getLocalHeight();
-            localHeight = 2775815;
-            localHeight = 2790178;
-            localHeight = 2839178;
-            localHeight = 2848178;
-            localHeight = 3094178;
-            localHeight = 3546863;
 
-            batchSize = 2000;
+            batchSize = 1;
             hasCreateIndex = true;
 
             // 
