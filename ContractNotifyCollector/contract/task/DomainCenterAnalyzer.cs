@@ -164,7 +164,7 @@ namespace ContractNotifyCollector.core.task
                     processDomainCredit(queryRes);
                 }
 
-                //updateRecord(endIndex);
+                updateRecord(endIndex);
                 log(endIndex, remoteHeight);
                 if (!hasCreateIndex) break ;
             }
